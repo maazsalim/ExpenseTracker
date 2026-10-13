@@ -72,6 +72,63 @@ Money is always stored as an exact decimal (`decimal` in C#, `numeric` in Postgr
 
 > Changing the home currency later would mean converting every saved expense again, because `AmountInHome` is stored in it.
 
+## 5. Caching
+
+There are **two separate caches**, and they do different jobs.
+
+### Cache 1: the `ExchangeRates` table (long-term memory)
+
+Think of it as a **notebook of past rates kept in the database**. When the app needs "CAD per USD on 10 October":
+
+1. **It checks the table first.** If that day is already there, it uses it, and no internet call is needed.
+2. **If not, it asks Frankfurter**, then **saves the answer** for next time.
+
+```
+Need rate for 10 Oct → in the table? ── yes → use it
+                                     └─ no  → ask Frankfurter → save to table → use it
+```
+
+- **It's permanent and shared.** It survives restarts, and every page and every user benefits from it.
+- **Only past days are saved.** Today's rate might not be published yet, so saving it could keep a stale rate forever. Today is always fetched fresh.
+- **Only CAD is stored.** AED never needs looking up, because it's fixed at 3.6725 per USD.
+
+Where: `PerUsdAsync` in [`Services/ExchangeRateService.cs`](../src/ExpenseTracker/Services/ExchangeRateService.cs).
+
+### Cache 2: once per circuit (short-term memory)
+
+**What a circuit is:** Blazor Server works differently from a normal website. When you open the app in a browser tab, that tab keeps a **live connection** to the server, and the server keeps a little bundle of memory just for that tab. That bundle is the **circuit**: your tab's session on the server.
+
+- Moving between Expenses, Summary and Categories → **same circuit**. The pages change, but the connection stays.
+- Refreshing the page, opening a new tab, or reopening the app → **new circuit**.
+
+**The cache:** the "≈ AED" lines need **today's** CAD→AED rate, and a single page can show it ten or more times. Instead of fetching it for each line, [`SecondaryCurrencyRate`](../src/ExpenseTracker/Services/SecondaryCurrencyRate.cs) does this:
+
+```csharp
+public Task<FxQuote?> GetAsync() => quote ??= LoadAsync();
+```
+
+In plain words: *"If I haven't fetched the rate yet, fetch it and remember it. If I already have, hand back the one I remembered."*
+
+That memory belongs to the circuit, because the service is registered with `AddScoped` in [`Program.cs`](../src/ExpenseTracker/Program.cs). In Blazor Server, **"scoped" means one per circuit**. So:
+
+- **One fetch per tab**, shared by every total on every page you visit in that tab.
+- **Refreshing gives a new circuit and a fresh fetch**, so the rate never gets more than one visit old.
+- When you close the tab, the circuit and its remembered rate are thrown away.
+
+(Blazor first renders a quick preview of the page before the live connection starts, so opening the app can actually fetch twice. That's harmless.)
+
+### Side by side
+
+| | `ExchangeRates` table | Once per circuit |
+|---|---|---|
+| Stores | rates for **past days** | **today's** CAD→AED rate |
+| Lives in | the database | the server's memory for your tab |
+| Lasts | forever | until you refresh or close the tab |
+| Shared by | everyone, always | the pages in one tab |
+| Saves | calling Frankfurter again for a day already fetched | calling it 10+ times per page |
+
+**Not a cache:** the rate stored **on each expense** (`FxRate`, `AmountInHome`). That's a **permanent record** of what was used when the expense was saved. It's never refreshed, which is the point: history doesn't change.
+
 ## The whole flow
 
 ```
