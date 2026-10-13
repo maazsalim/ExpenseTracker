@@ -16,6 +16,7 @@ builder.Services.AddHttpClient<IUsdRateSource, FrankfurterRateSource>(http =>
     http.Timeout = TimeSpan.FromSeconds(10);
 });
 builder.Services.AddScoped<IExchangeRateService, ExchangeRateService>();
+builder.Services.AddScoped<SecondaryCurrencyRate>();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()

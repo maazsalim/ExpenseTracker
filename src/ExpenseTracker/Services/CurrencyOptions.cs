@@ -12,6 +12,9 @@ public class CurrencyOptions
     /// </summary>
     public string HomeCurrency { get; set; } = Currencies.CAD;
 
+    /// <summary>Totals are also shown, smaller, in this currency (converted at today's rate).</summary>
+    public string SecondaryCurrency { get; set; } = Currencies.AED;
+
     /// <summary>Pre-selected currency on the add-expense form.</summary>
     public string DefaultExpenseCurrency { get; set; } = Currencies.AED;
 }

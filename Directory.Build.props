@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- MSBuild's default is "obj\"; dotnet watch on macOS can't read paths with that backslash. -->
+    <BaseIntermediateOutputPath>obj/</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

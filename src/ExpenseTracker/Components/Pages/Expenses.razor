@@ -29,6 +29,7 @@ else
         <div class="card-panel stat-card">
             <div class="stat-label">This month</div>
             <div class="stat-value">@Money.Format(monthTotal, Home)</div>
+            <SecondaryAmount Value="monthTotal" />
             <div class="stat-sub">@monthCount @(monthCount == 1 ? "expense" : "expenses") in @DateTime.Today.ToString("MMMM")</div>
         </div>
         <div class="card-panel stat-card">
@@ -37,10 +38,11 @@ else
             {
                 var remaining = budgetTotal - budgetSpent;
                 <div class="stat-value @(remaining < 0 ? "text-over" : "")">@Money.Format(Math.Abs(remaining), Home)@(remaining < 0 ? " over" : "")</div>
+                <SecondaryAmount Value="Math.Abs(remaining)" Suffix="@(remaining < 0 ? " over" : null)" />
                 <div class="breakdown-track mt-2">
                     <div class="breakdown-bar @(remaining < 0 ? "bar-over" : "bar-indigo")" style="width: @BudgetPercent%"></div>
                 </div>
-                <div class="stat-sub mt-1">@Money.Format(budgetSpent, Home) of @Money.Format(budgetTotal, Home) budgeted</div>
+                <div class="stat-sub mt-1">@Money.Format(budgetSpent, Home) of @Money.Format(budgetTotal, Home) @(totalBudget is null ? "budgeted" : "overall budget")</div>
             }
             else
             {
@@ -52,10 +54,15 @@ else
             <div class="stat-label">Top category this month</div>
             <div class="stat-value">@(topCategory?.Name ?? "—")</div>
             <div class="stat-sub">@(topCategory is null ? "No spending yet" : $"{Money.Format(topCategory.Amount, Home)} spent")</div>
+            @if (topCategory is not null)
+            {
+                <SecondaryAmount Value="topCategory.Amount" Suffix=" spent" />
+            }
         </div>
         <div class="card-panel stat-card">
             <div class="stat-label">All time</div>
             <div class="stat-value">@Money.Format(expenses.Sum(e => e.AmountInHome), Home)</div>
+            <SecondaryAmount Value="expenses.Sum(e => e.AmountInHome)" />
             <div class="stat-sub">@expenses.Count @(expenses.Count == 1 ? "expense" : "expenses") recorded</div>
         </div>
     </div>
@@ -147,7 +154,10 @@ else
                         <tfoot>
                             <tr>
                                 <td colspan="3">@Filtered.Count @(Filtered.Count == 1 ? "expense" : "expenses")</td>
-                                <td class="num text-nowrap">@Money.Format(Filtered.Sum(e => e.AmountInHome), Home)</td>
+                                <td class="num text-nowrap">
+                                    @Money.Format(Filtered.Sum(e => e.AmountInHome), Home)
+                                    <SecondaryAmount Value="Filtered.Sum(e => e.AmountInHome)" />
+                                </td>
                                 <td></td>
                             </tr>
                         </tfoot>
@@ -174,6 +184,7 @@ else
     private CategoryTotal? topCategory;
     private decimal budgetTotal;
     private decimal budgetSpent;
+    private decimal? totalBudget;
 
     private string Home => CurrencyOptions.Value.HomeCurrency;
 
@@ -194,6 +205,7 @@ else
             .OrderByDescending(e => e.Date)
             .ThenByDescending(e => e.Id)
             .ToListAsync();
+        totalBudget = (await db.Settings.SingleAsync()).TotalMonthlyBudget;
         ComputeStats();
         loaded = true;
     }
@@ -210,7 +222,15 @@ else
             .OrderByDescending(c => c.Amount)
             .FirstOrDefault();
 
-        // Only spending in categories that have a budget counts against it.
+        // An overall budget covers all spending.
+        if (totalBudget is { } overall)
+        {
+            budgetTotal = overall;
+            budgetSpent = monthTotal;
+            return;
+        }
+
+        // Otherwise only spending in categories that have a budget counts against them.
         var budgeted = categories.Where(c => c.MonthlyBudget is not null).ToList();
         budgetTotal = budgeted.Sum(c => c.MonthlyBudget!.Value);
         budgetSpent = thisMonth

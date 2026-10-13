@@ -193,6 +193,24 @@ h1:focus {
     width: auto;
 }
 
+.total-budget-input {
+    max-width: 260px;
+}
+
+/* A total repeated, smaller, in the secondary currency. */
+.amount-secondary {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 400;
+    letter-spacing: normal;
+    color: var(--text-muted);
+}
+
+    .amount-secondary.inline {
+        display: inline;
+        font-size: inherit;
+    }
+
 /* Converted home-currency amount shown under an original amount. */
 .amount-converted {
     display: block;

@@ -33,11 +33,13 @@ else
         <div class="card-panel stat-card">
             <div class="stat-label">Total spent</div>
             <div class="stat-value">@Money.Format(total, Home)</div>
+            <SecondaryAmount Value="total" />
             <div class="stat-sub">@count @(count == 1 ? "expense" : "expenses")</div>
         </div>
         <div class="card-panel stat-card">
             <div class="stat-label">Daily average</div>
             <div class="stat-value">@Money.Format(DailyAverage, Home)</div>
+            <SecondaryAmount Value="DailyAverage" />
             <div class="stat-sub">over @DaysCounted @(DaysCounted == 1 ? "day" : "days")</div>
         </div>
         <div class="card-panel stat-card">
@@ -53,7 +55,7 @@ else
             <a href="categories" class="small fw-medium text-decoration-none">Manage budgets</a>
         </div>
 
-        @if (Budgeted.Count == 0)
+        @if (Budgeted.Count == 0 && totalBudget is null)
         {
             <div class="empty-state">
                 <h2>No budgets set</h2>
@@ -64,6 +66,34 @@ else
         else
         {
             <div class="card-panel-body">
+                @if (totalBudget is { } overall)
+                {
+                    var overallLeft = overall - total;
+                    <div class="breakdown-row">
+                        <div class="breakdown-top">
+                            <span class="fw-semibold">Overall</span>
+                            <span class="num">
+                                <span class="fw-semibold @(overallLeft < 0 ? "text-over" : "")">@Money.Format(total, Home)</span>
+                                <span class="muted"> / @overall.ToString("N2")</span>
+                                <SecondaryAmount Value="total" />
+                            </span>
+                        </div>
+                        <div class="breakdown-track">
+                            <div class="breakdown-bar @(overallLeft < 0 ? "bar-over" : "bar-indigo")" style="width: @Percent(total, overall)%"></div>
+                        </div>
+                        <div class="budget-meta">
+                            <span class="muted">@((int)Math.Round(total / overall * 100))% used</span>
+                            @if (overallLeft < 0)
+                            {
+                                <span class="text-over">@Money.Format(-overallLeft, Home) over</span>
+                            }
+                            else
+                            {
+                                <span class="muted">@Money.Format(overallLeft, Home) left</span>
+                            }
+                        </div>
+                    </div>
+                }
                 @foreach (var r in Budgeted)
                 {
                     var budget = r.Budget!.Value;
@@ -74,6 +104,7 @@ else
                             <span class="num">
                                 <span class="fw-semibold @(remaining < 0 ? "text-over" : "")">@Money.Format(r.Amount, Home)</span>
                                 <span class="muted"> / @budget.ToString("N2")</span>
+                                <SecondaryAmount Value="r.Amount" />
                             </span>
                         </div>
                         <div class="breakdown-track">
@@ -119,6 +150,7 @@ else
                             <span class="num">
                                 <span class="fw-semibold">@Money.Format(r.Amount, Home)</span>
                                 <span class="muted ms-2">@Percent(r)%</span>
+                                <SecondaryAmount Value="r.Amount" />
                             </span>
                         </div>
                         <div class="breakdown-track">
@@ -139,6 +171,7 @@ else
     private DateOnly month = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private List<CategoryTotal> rows = new();
     private decimal total;
+    private decimal? totalBudget;
     private int count;
     private bool loaded;
 
@@ -183,6 +216,7 @@ else
         count = await db.Expenses.CountAsync(e => e.Date >= start && e.Date < end);
 
         total = rows.Sum(r => r.Amount);
+        totalBudget = (await db.Settings.SingleAsync()).TotalMonthlyBudget;
         loaded = true;
     }
 
@@ -190,5 +224,8 @@ else
         total == 0 ? 0 : (int)Math.Round(r.Amount / total * 100);
 
     private static int BudgetPercent(CategoryTotal r) =>
-        r.Budget is not > 0 ? 0 : (int)Math.Min(100, Math.Round(r.Amount / r.Budget.Value * 100));
+        r.Budget is not > 0 ? 0 : Percent(r.Amount, r.Budget.Value);
+
+    private static int Percent(decimal spent, decimal budget) =>
+        budget <= 0 ? 0 : (int)Math.Min(100, Math.Round(spent / budget * 100));
 }

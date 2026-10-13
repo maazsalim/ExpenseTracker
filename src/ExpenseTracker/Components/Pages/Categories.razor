@@ -20,6 +20,38 @@
 }
 else
 {
+    <div class="card-panel mb-4">
+        <div class="card-panel-header">
+            <h2 class="fs-6 fw-semibold mb-0">Overall monthly budget</h2>
+        </div>
+        <div class="card-panel-body">
+            <p class="muted small mb-3">
+                A limit for everything you spend in a month, across all categories.
+                This month: <strong>@Money.Format(MonthSpentTotal, Home)</strong><SecondaryAmount Value="MonthSpentTotal" Inline Prefix=" (" Suffix=")" /> spent@(totalBudget is { } t ? $" of {Money.Format(t, Home)}" : "").
+                @if (CategoryBudgetSum > 0)
+                {
+                    <span>Category budgets add up to @Money.Format(CategoryBudgetSum, Home).</span>
+                }
+            </p>
+            <div class="d-flex flex-wrap gap-2 align-items-start">
+                <div class="input-group total-budget-input">
+                    <span class="input-group-text">@Home</span>
+                    <input id="total-budget" type="number" step="0.01" min="0" class="form-control" placeholder="No overall budget"
+                           aria-label="Overall monthly budget in @Home" @bind="totalBudgetInput" />
+                </div>
+                <button type="button" class="btn btn-primary" disabled="@savingTotal" @onclick="SaveTotalBudgetAsync">Save</button>
+                @if (totalBudget is not null)
+                {
+                    <button type="button" class="btn btn-light" disabled="@savingTotal" @onclick="ClearTotalBudgetAsync">Remove</button>
+                }
+            </div>
+            @if (totalBudgetError is not null)
+            {
+                <div class="validation-message mt-1">@totalBudgetError</div>
+            }
+        </div>
+    </div>
+
     <div class="two-col">
         <div class="card-panel">
             <div class="card-panel-header">
@@ -103,7 +135,13 @@ else
                                 var over = r.Category.MonthlyBudget is { } b && r.MonthSpent > b;
                                 <tr>
                                     <td><span class="cat-badge cat-@r.Category.Color">@r.Category.Name</span></td>
-                                    <td class="num @(over ? "text-over" : "")">@r.MonthSpent.ToString("N2")</td>
+                                    <td class="num @(over ? "text-over" : "")">
+                                        @r.MonthSpent.ToString("N2")
+                                        @if (r.MonthSpent > 0)
+                                        {
+                                            <SecondaryAmount Value="r.MonthSpent" />
+                                        }
+                                    </td>
                                     <td class="num">
                                         @if (r.Category.MonthlyBudget is { } budget)
                                         {
@@ -152,6 +190,15 @@ else
 
     private List<CategoryRow> rows = new();
     private bool loaded;
+
+    private decimal? totalBudget;
+    private decimal? totalBudgetInput;
+    private string? totalBudgetError;
+    private bool savingTotal;
+
+    // Every expense belongs to a category, so this is all spending this month.
+    private decimal MonthSpentTotal => rows.Sum(r => r.MonthSpent);
+    private decimal CategoryBudgetSum => rows.Sum(r => r.Category.MonthlyBudget ?? 0);
     private bool saving;
 
     private Category form = new();
@@ -179,7 +226,31 @@ else
                 c.Expenses.Count,
                 c.Expenses.Where(e => e.Date >= start && e.Date < end).Sum(e => e.AmountInHome)))
             .ToListAsync();
+        totalBudget = (await db.Settings.SingleAsync()).TotalMonthlyBudget;
+        totalBudgetInput = totalBudget;
         loaded = true;
+    }
+
+    private async Task SaveTotalBudgetAsync()
+    {
+        if (totalBudgetInput is not > 0)
+        {
+            totalBudgetError = "Enter an amount greater than 0, or use Remove.";
+            return;
+        }
+        await SetTotalBudgetAsync(Math.Round(totalBudgetInput.Value, 2));
+    }
+
+    private Task ClearTotalBudgetAsync() => SetTotalBudgetAsync(null);
+
+    private async Task SetTotalBudgetAsync(decimal? value)
+    {
+        savingTotal = true;
+        totalBudgetError = null;
+        using var db = await DbFactory.CreateDbContextAsync();
+        await db.Settings.ExecuteUpdateAsync(s => s.SetProperty(x => x.TotalMonthlyBudget, value));
+        totalBudget = totalBudgetInput = value;
+        savingTotal = false;
     }
 
     private void StartEdit(Category c)

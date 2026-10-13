@@ -8,6 +8,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Expense> Expenses => Set<Expense>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
+    public DbSet<AppSettings> Settings => Set<AppSettings>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -34,6 +35,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             r.Property(x => x.Source).HasMaxLength(50);
             r.Property(x => x.Rate).HasPrecision(18, 8);
             r.HasIndex(x => new { x.Date, x.Base, x.Quote }).IsUnique();
+        });
+
+        b.Entity<AppSettings>(s =>
+        {
+            s.Property(x => x.Id).ValueGeneratedNever();
+            s.Property(x => x.TotalMonthlyBudget).HasPrecision(12, 2);
+            s.HasData(new AppSettings { Id = AppSettings.SingletonId });
         });
 
         b.Entity<Category>().HasData(
