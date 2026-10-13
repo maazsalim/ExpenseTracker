@@ -2,7 +2,8 @@
 @page "/expenses"
 @rendermode InteractiveServer
 @inject IDbContextFactory<AppDbContext> DbFactory
-@inject IOptions<CurrencyOptions> CurrencyOptions
+@inject DisplayCurrency Display
+@implements IDisposable
 
 <PageTitle>Expenses · ExpenseTracker</PageTitle>
 
@@ -11,10 +12,13 @@
         <h1>Expenses</h1>
         <p>Track and manage everything you spend.</p>
     </div>
-    <a href="expenses/new" class="btn btn-primary">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-        Add expense
-    </a>
+    <div class="header-actions">
+        <CurrencySwitch />
+        <a href="expenses/new" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            Add expense
+        </a>
+    </div>
 </div>
 
 @if (!loaded)
@@ -28,8 +32,7 @@ else
     <div class="stat-grid">
         <div class="card-panel stat-card">
             <div class="stat-label">This month</div>
-            <div class="stat-value">@Money.Format(monthTotal, Home)</div>
-            <SecondaryAmount Value="monthTotal" />
+            <div class="stat-value">@Display.Format(monthTotal)</div>
             <div class="stat-sub">@monthCount @(monthCount == 1 ? "expense" : "expenses") in @DateTime.Today.ToString("MMMM")</div>
         </div>
         <div class="card-panel stat-card">
@@ -37,12 +40,11 @@ else
             @if (budgetTotal > 0)
             {
                 var remaining = budgetTotal - budgetSpent;
-                <div class="stat-value @(remaining < 0 ? "text-over" : "")">@Money.Format(Math.Abs(remaining), Home)@(remaining < 0 ? " over" : "")</div>
-                <SecondaryAmount Value="Math.Abs(remaining)" Suffix="@(remaining < 0 ? " over" : null)" />
+                <div class="stat-value @(remaining < 0 ? "text-over" : "")">@Display.Format(Math.Abs(remaining))@(remaining < 0 ? " over" : "")</div>
                 <div class="breakdown-track mt-2">
                     <div class="breakdown-bar @(remaining < 0 ? "bar-over" : "bar-indigo")" style="width: @BudgetPercent%"></div>
                 </div>
-                <div class="stat-sub mt-1">@Money.Format(budgetSpent, Home) of @Money.Format(budgetTotal, Home) @(totalBudget is null ? "budgeted" : "overall budget")</div>
+                <div class="stat-sub mt-1">@Display.Format(budgetSpent) of @BudgetLabel(budgetTotal) @(totalBudget is null ? "budgeted" : "overall budget")</div>
             }
             else
             {
@@ -53,16 +55,11 @@ else
         <div class="card-panel stat-card">
             <div class="stat-label">Top category this month</div>
             <div class="stat-value">@(topCategory?.Name ?? "—")</div>
-            <div class="stat-sub">@(topCategory is null ? "No spending yet" : $"{Money.Format(topCategory.Amount, Home)} spent")</div>
-            @if (topCategory is not null)
-            {
-                <SecondaryAmount Value="topCategory.Amount" Suffix=" spent" />
-            }
+            <div class="stat-sub">@(topCategory is null ? "No spending yet" : $"{Display.Format(topCategory.Amount)} spent")</div>
         </div>
         <div class="card-panel stat-card">
             <div class="stat-label">All time</div>
-            <div class="stat-value">@Money.Format(expenses.Sum(e => e.AmountInHome), Home)</div>
-            <SecondaryAmount Value="expenses.Sum(e => e.AmountInHome)" />
+            <div class="stat-value">@Display.Format(expenses.Sum(Display.Of))</div>
             <div class="stat-sub">@expenses.Count @(expenses.Count == 1 ? "expense" : "expenses") recorded</div>
         </div>
     </div>
@@ -125,9 +122,9 @@ else
                                     <td><span class="cat-badge cat-@e.Category?.Color">@e.Category?.Name</span></td>
                                     <td class="num fw-semibold text-nowrap">
                                         @Money.Format(e.Amount, e.Currency)
-                                        @if (e.Currency != Home)
+                                        @if (e.Currency != Display.Current)
                                         {
-                                            <span class="amount-converted" title="@($"1 {e.Currency} = {e.FxRate:0.######} {Home} on {e.RateDate:d MMM yyyy}")">@Money.Format(e.AmountInHome, Home)</span>
+                                            <span class="amount-converted" title="@($"1 {e.Currency} = {Display.RateOf(e):0.######} {Display.Current} on {e.RateDate:d MMM yyyy}")">@Display.Format(Display.Of(e))</span>
                                         }
                                     </td>
                                     <td>
@@ -154,10 +151,7 @@ else
                         <tfoot>
                             <tr>
                                 <td colspan="3">@Filtered.Count @(Filtered.Count == 1 ? "expense" : "expenses")</td>
-                                <td class="num text-nowrap">
-                                    @Money.Format(Filtered.Sum(e => e.AmountInHome), Home)
-                                    <SecondaryAmount Value="Filtered.Sum(e => e.AmountInHome)" />
-                                </td>
+                                <td class="num text-nowrap">@Display.Format(Filtered.Sum(Display.Of))</td>
                                 <td></td>
                             </tr>
                         </tfoot>
@@ -186,7 +180,8 @@ else
     private decimal budgetSpent;
     private decimal? totalBudget;
 
-    private string Home => CurrencyOptions.Value.HomeCurrency;
+    // Budgets are set in CAD, so in AED they're converted at today's rate (approximate).
+    private string BudgetLabel(decimal amount) => (Display.ShowingSecondary ? "≈ " : "") + Display.Format(amount);
 
     private int BudgetPercent => budgetTotal == 0 ? 0 : (int)Math.Min(100, Math.Round(budgetSpent / budgetTotal * 100));
 
@@ -207,35 +202,44 @@ else
             .ToListAsync();
         totalBudget = (await db.Settings.SingleAsync()).TotalMonthlyBudget;
         ComputeStats();
+        Display.Changed += OnDisplayCurrencyChanged;
         loaded = true;
     }
+
+    private void OnDisplayCurrencyChanged() => InvokeAsync(() =>
+    {
+        ComputeStats();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Display.Changed -= OnDisplayCurrencyChanged;
 
     private void ComputeStats()
     {
         var today = DateTime.Today;
         var thisMonth = expenses.Where(e => e.Date.Year == today.Year && e.Date.Month == today.Month).ToList();
-        monthTotal = thisMonth.Sum(e => e.AmountInHome);
+        monthTotal = thisMonth.Sum(Display.Of);
         monthCount = thisMonth.Count;
         topCategory = thisMonth
             .GroupBy(e => e.Category?.Name ?? "Uncategorised")
-            .Select(g => new CategoryTotal(g.Key, g.Sum(e => e.AmountInHome)))
+            .Select(g => new CategoryTotal(g.Key, g.Sum(Display.Of)))
             .OrderByDescending(c => c.Amount)
             .FirstOrDefault();
 
         // An overall budget covers all spending.
         if (totalBudget is { } overall)
         {
-            budgetTotal = overall;
+            budgetTotal = Display.Budget(overall);
             budgetSpent = monthTotal;
             return;
         }
 
         // Otherwise only spending in categories that have a budget counts against them.
         var budgeted = categories.Where(c => c.MonthlyBudget is not null).ToList();
-        budgetTotal = budgeted.Sum(c => c.MonthlyBudget!.Value);
+        budgetTotal = Display.Budget(budgeted.Sum(c => c.MonthlyBudget!.Value));
         budgetSpent = thisMonth
             .Where(e => budgeted.Any(c => c.Id == e.CategoryId))
-            .Sum(e => e.AmountInHome);
+            .Sum(Display.Of);
     }
 
     private async Task DeleteAsync(Expense e)

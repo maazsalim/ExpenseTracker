@@ -22,14 +22,20 @@ public class Expense
     public int CategoryId { get; set; }
     public Category? Category { get; set; }
 
-    // Conversion to the home currency, fixed when the expense is saved so history
-    // doesn't change when rates do.
+    // Conversions to the home (CAD) and secondary (AED) currencies, fixed when the expense
+    // is saved so history doesn't change when rates do. One of them is always the
+    // original amount at a rate of 1.
 
     /// <summary>1 <see cref="Currency"/> = <see cref="FxRate"/> home currency.</summary>
     public decimal FxRate { get; set; } = 1m;
 
-    /// <summary>The day <see cref="FxRate"/> was published.</summary>
+    /// <summary>The day the rates were published.</summary>
     public DateOnly RateDate { get; set; }
 
     public decimal AmountInHome { get; set; }
+
+    /// <summary>1 <see cref="Currency"/> = <see cref="SecondaryFxRate"/> secondary currency.</summary>
+    public decimal SecondaryFxRate { get; set; } = 1m;
+
+    public decimal AmountInSecondary { get; set; }
 }

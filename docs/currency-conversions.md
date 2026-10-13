@@ -1,6 +1,6 @@
 # How currency conversions work
 
-**In one sentence:** every expense is saved in the currency you paid in, converted to the home currency (CAD) at that day's rate when you save it, and stored with that rate. That way totals always add up in one currency, and old numbers never change when rates move.
+**In one sentence:** every expense is saved in the currency you paid in, plus its amount in both CAD and AED at that day's rate, fixed when you save it. That way totals can be shown exactly in either currency, and old numbers never change when rates move.
 
 ## 1. Every rate goes through the US dollar
 
@@ -46,31 +46,40 @@ When you save an expense, the app stores these alongside the original amount:
 |---|---|---|
 | `Amount` + `Currency` | 900.00 AED | what you actually paid |
 | `FxRate` | 0.38834 | 1 AED = this many CAD |
-| `RateDate` | 13 Oct 2026 | the day that rate was published |
 | `AmountInHome` | 349.51 | the amount in CAD, rounded to cents |
+| `SecondaryFxRate` | 1 | 1 AED = this many AED |
+| `AmountInSecondary` | 900.00 | the amount in AED |
+| `RateDate` | 13 Oct 2026 | the day the rate was published |
 
-Because the CAD amount is stored, **past months never change** when exchange rates move. If you edit an expense, the rate is only fetched again if you change its **currency or date**. Changing just the amount reuses the stored rate.
+So every expense has its amount in **both** currencies. One of them is always the original (rate 1); the other is converted at that day's rate. A CAD expense works the other way round: `AmountInHome` is the original and `AmountInSecondary` is converted.
+
+Because both amounts are stored, **past months never change** when exchange rates move. If you edit an expense, the rate is only fetched again if you change its **currency or date**. Changing just the amount reuses the stored rate.
 
 Money is always stored as an exact decimal (`decimal` in C#, `numeric` in PostgreSQL), not a floating-point number, so no rounding errors creep in. Rates keep 8 decimal places. Converted amounts are rounded to cents, with halves rounding up (5.005 → 5.01).
 
 | File | What it does |
 |---|---|
 | [`Models/Expense.cs`](../src/ExpenseTracker/Models/Expense.cs) | The fields above. |
-| [`Components/Pages/ExpenseForm.razor`](../src/ExpenseTracker/Components/Pages/ExpenseForm.razor) | `SaveAsync` fetches the rate (if needed) and sets `FxRate`, `RateDate` and `AmountInHome`. |
+| [`Services/ExpenseConverter.cs`](../src/ExpenseTracker/Services/ExpenseConverter.cs) | `ConvertAsync` fetches both rates and sets all the fields above. `ApplyRates` recalculates the amounts from the stored rates when only the amount changed. |
+| [`Components/Pages/ExpenseForm.razor`](../src/ExpenseTracker/Components/Pages/ExpenseForm.razor) | `SaveAsync` calls the converter: `ConvertAsync` for a new expense or a changed currency/date, otherwise `ApplyRates`. |
 | [`Services/Money.cs`](../src/ExpenseTracker/Services/Money.cs) | `Convert` (multiply and round to cents) and `Format` (e.g. "CAD 349.51"). |
 
-## 4. Totals add up in CAD, with AED shown as a guide
+## 4. Totals: the CAD | AED switch
 
-- Every total, budget and summary adds up **`AmountInHome`**, so AED and CAD are never mixed in one sum. The home currency is set in [`appsettings.json`](../src/ExpenseTracker/appsettings.json) (`Currency:HomeCurrency`).
-- The smaller **"≈ AED"** line under a total is the CAD total converted back at **today's** rate. That's why it says "≈": it's a guide, not a record. For past months it can differ slightly from what you actually paid in AED.
+- The **CAD | AED switch** at the top of the Expenses and Summary pages picks which stored amount every total adds up: `AmountInHome` for CAD, `AmountInSecondary` for AED. AED and CAD are never mixed in one sum, and **both views are exact**: an AED total counts AED purchases at exactly what you paid.
+- The choice is remembered in your browser, and carries across pages.
+- **Budgets** are set in CAD. In the AED view they're converted at **today's** rate and marked "≈", because a budget is a target, not a record. If today's rate can't be fetched, the AED button is disabled.
+- The **Categories** page always shows CAD, because that's where budgets are set.
+- In the expense list, each row shows its original amount, plus the converted amount underneath if it was paid in the other currency.
 
 | File | What it does |
 |---|---|
-| [`Services/SecondaryCurrencyRate.cs`](../src/ExpenseTracker/Services/SecondaryCurrencyRate.cs) | Fetches today's CAD→AED rate once per visit (per Blazor circuit) and shares it with every total. Returns nothing if no rate can be found. |
-| [`Components/SecondaryAmount.razor`](../src/ExpenseTracker/Components/SecondaryAmount.razor) | Shows the "≈ AED" line. Use `<SecondaryAmount Value="cadTotal" />` under any new total. |
-| [`Services/CurrencyOptions.cs`](../src/ExpenseTracker/Services/CurrencyOptions.cs) | Settings: home currency (CAD), secondary display currency (AED), and the default currency on the add-expense form (AED). |
+| [`Components/CurrencySwitch.razor`](../src/ExpenseTracker/Components/CurrencySwitch.razor) | The CAD \| AED buttons. Saves the choice in the browser's `localStorage` and restores it on load. |
+| [`Services/DisplayCurrency.cs`](../src/ExpenseTracker/Services/DisplayCurrency.cs) | Remembers the current choice for the tab. `Of(expense)` gives the amount to add up, `Budget(cad)` converts a budget, and `Changed` tells pages to redraw. |
+| [`Services/SecondaryCurrencyRate.cs`](../src/ExpenseTracker/Services/SecondaryCurrencyRate.cs) | Fetches today's CAD→AED rate once per visit, used for budgets in the AED view. |
+| [`Services/CurrencyOptions.cs`](../src/ExpenseTracker/Services/CurrencyOptions.cs) | Settings: home currency (CAD), secondary currency (AED), and the default currency on the add-expense form (AED). |
 
-> Changing the home currency later would mean converting every saved expense again, because `AmountInHome` is stored in it.
+> Changing the home or secondary currency later would mean converting every saved expense again, because both amounts are stored.
 
 ## 5. Caching
 
@@ -101,7 +110,7 @@ Where: `PerUsdAsync` in [`Services/ExchangeRateService.cs`](../src/ExpenseTracke
 - Moving between Expenses, Summary and Categories → **same circuit**. The pages change, but the connection stays.
 - Refreshing the page, opening a new tab, or reopening the app → **new circuit**.
 
-**The cache:** the "≈ AED" lines need **today's** CAD→AED rate, and a single page can show it ten or more times. Instead of fetching it for each line, [`SecondaryCurrencyRate`](../src/ExpenseTracker/Services/SecondaryCurrencyRate.cs) does this:
+**The cache:** showing budgets in the AED view needs **today's** CAD→AED rate, and every page and every budget on it would otherwise fetch it again. Instead, [`SecondaryCurrencyRate`](../src/ExpenseTracker/Services/SecondaryCurrencyRate.cs) does this:
 
 ```csharp
 public Task<FxQuote?> GetAsync() => quote ??= LoadAsync();
@@ -111,9 +120,11 @@ In plain words: *"If I haven't fetched the rate yet, fetch it and remember it. I
 
 That memory belongs to the circuit, because the service is registered with `AddScoped` in [`Program.cs`](../src/ExpenseTracker/Program.cs). In Blazor Server, **"scoped" means one per circuit**. So:
 
-- **One fetch per tab**, shared by every total on every page you visit in that tab.
+- **One fetch per tab**, shared by every page you visit in that tab.
 - **Refreshing gives a new circuit and a fresh fetch**, so the rate never gets more than one visit old.
 - When you close the tab, the circuit and its remembered rate are thrown away.
+
+The CAD | AED choice lives in the circuit the same way (in `DisplayCurrency`), which is why it carries across pages. It's also saved in the browser, so a new circuit picks it back up.
 
 (Blazor first renders a quick preview of the page before the live connection starts, so opening the app can actually fetch twice. That's harmless.)
 
@@ -125,27 +136,27 @@ That memory belongs to the circuit, because the service is registered with `AddS
 | Lives in | the database | the server's memory for your tab |
 | Lasts | forever | until you refresh or close the tab |
 | Shared by | everyone, always | the pages in one tab |
-| Saves | calling Frankfurter again for a day already fetched | calling it 10+ times per page |
+| Saves | calling Frankfurter again for a day already fetched | calling it on every page and budget |
 
-**Not a cache:** the rate stored **on each expense** (`FxRate`, `AmountInHome`). That's a **permanent record** of what was used when the expense was saved. It's never refreshed, which is the point: history doesn't change.
+**Not a cache:** the rates and amounts stored **on each expense** (`FxRate`, `AmountInHome`, `SecondaryFxRate`, `AmountInSecondary`). That's a **permanent record** of what was used when the expense was saved. It's never refreshed, which is the point: history doesn't change.
 
 ## The whole flow
 
 ```
 You save "900 AED, Gym"
-   → ExpenseForm asks ExchangeRateService: AED → CAD on 13 Oct?
+   → ExpenseConverter asks ExchangeRateService for AED → CAD and AED → AED on 13 Oct
        → AED per USD: 3.6725 (fixed)
        → CAD per USD: cache, or Frankfurter, then cache it → 1.4262
-       → rate = 1.4262 ÷ 3.6725 = 0.38834
-   → stored: 900 AED, rate 0.38834, rate date 13 Oct, CAD 349.51
+       → AED → CAD = 1.4262 ÷ 3.6725 = 0.38834;  AED → AED = 1
+   → stored: 900 AED, CAD 349.51 (rate 0.38834), AED 900.00 (rate 1), rate date 13 Oct
 
-Pages add up AmountInHome → "CAD 349.51"
-SecondaryAmount × today's CAD→AED rate → "≈ AED 900.00"
+Switch on CAD → pages add up AmountInHome      → "CAD 349.51"
+Switch on AED → pages add up AmountInSecondary → "AED 900.00"
 ```
 
 ## Tests
 
-[`ExchangeRateServiceTests.cs`](../tests/ExpenseTracker.Tests/ExchangeRateServiceTests.cs), [`MoneyTests.cs`](../tests/ExpenseTracker.Tests/MoneyTests.cs) and [`SecondaryCurrencyRateTests.cs`](../tests/ExpenseTracker.Tests/SecondaryCurrencyRateTests.cs) cover the AED peg, rounding, caching, weekend dates, future dates and an API outage. They use a fake rate source and an in-memory database, so they never touch the internet.
+[`ExchangeRateServiceTests.cs`](../tests/ExpenseTracker.Tests/ExchangeRateServiceTests.cs), [`ExpenseConverterTests.cs`](../tests/ExpenseTracker.Tests/ExpenseConverterTests.cs), [`DisplayCurrencyTests.cs`](../tests/ExpenseTracker.Tests/DisplayCurrencyTests.cs), [`MoneyTests.cs`](../tests/ExpenseTracker.Tests/MoneyTests.cs) and [`SecondaryCurrencyRateTests.cs`](../tests/ExpenseTracker.Tests/SecondaryCurrencyRateTests.cs) cover the AED peg, converting to both currencies, the switch, rounding, caching, weekend dates, future dates and an API outage. They use a fake rate source and an in-memory database, so they never touch the internet.
 
 ```bash
 dotnet test

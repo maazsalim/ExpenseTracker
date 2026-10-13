@@ -3,7 +3,7 @@
 @rendermode InteractiveServer
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject NavigationManager Nav
-@inject IExchangeRateService Fx
+@inject ExpenseConverter Converter
 @inject IOptions<CurrencyOptions> CurrencyOptions
 
 <PageTitle>@Title · ExpenseTracker</PageTitle>
@@ -137,9 +137,7 @@
         {
             try
             {
-                var quote = await Fx.GetRateAsync(expense!.Currency, CurrencyOptions.Value.HomeCurrency, expense.Date);
-                expense.FxRate = quote.Rate;
-                expense.RateDate = quote.RateDate;
+                await Converter.ConvertAsync(expense!);
             }
             catch (ExchangeRateUnavailableException ex)
             {
@@ -148,7 +146,10 @@
                 return;
             }
         }
-        expense.AmountInHome = Money.Convert(expense.Amount, expense.FxRate);
+        else
+        {
+            ExpenseConverter.ApplyRates(expense!);
+        }
 
         using var db = await DbFactory.CreateDbContextAsync();
         if (Id is null)

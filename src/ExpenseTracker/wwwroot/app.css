@@ -46,6 +46,42 @@ h1:focus {
     margin-bottom: 1.75rem;
 }
 
+.header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+/* CAD | AED toggle for which currency totals are shown in. */
+.currency-switch {
+    display: inline-flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    padding: 0.25rem;
+    box-shadow: var(--shadow-sm);
+}
+
+    .currency-switch button {
+        border: 0;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 0.35rem 0.85rem;
+        border-radius: 0.45rem;
+    }
+
+        .currency-switch button.active {
+            background: var(--brand-600);
+            color: #fff;
+        }
+
+        .currency-switch button:disabled {
+            opacity: 0.45;
+        }
+
     .page-header h1 {
         font-size: 1.75rem;
         font-weight: 700;
@@ -197,21 +233,7 @@ h1:focus {
     max-width: 260px;
 }
 
-/* A total repeated, smaller, in the secondary currency. */
-.amount-secondary {
-    display: block;
-    font-size: 0.78rem;
-    font-weight: 400;
-    letter-spacing: normal;
-    color: var(--text-muted);
-}
-
-    .amount-secondary.inline {
-        display: inline;
-        font-size: inherit;
-    }
-
-/* Converted home-currency amount shown under an original amount. */
+/* An expense's amount in the display currency, shown under its original amount. */
 .amount-converted {
     display: block;
     font-size: 0.78rem;

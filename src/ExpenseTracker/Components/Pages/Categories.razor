@@ -8,7 +8,7 @@
 <div class="page-header">
     <div>
         <h1>Categories</h1>
-        <p>Organise your spending and set monthly budgets.</p>
+        <p>Organise your spending and set monthly budgets. Budgets and amounts here are in @Home.</p>
     </div>
 </div>
 
@@ -27,7 +27,7 @@ else
         <div class="card-panel-body">
             <p class="muted small mb-3">
                 A limit for everything you spend in a month, across all categories.
-                This month: <strong>@Money.Format(MonthSpentTotal, Home)</strong><SecondaryAmount Value="MonthSpentTotal" Inline Prefix=" (" Suffix=")" /> spent@(totalBudget is { } t ? $" of {Money.Format(t, Home)}" : "").
+                This month: <strong>@Money.Format(MonthSpentTotal, Home)</strong> spent@(totalBudget is { } t ? $" of {Money.Format(t, Home)}" : "").
                 @if (CategoryBudgetSum > 0)
                 {
                     <span>Category budgets add up to @Money.Format(CategoryBudgetSum, Home).</span>
@@ -135,13 +135,7 @@ else
                                 var over = r.Category.MonthlyBudget is { } b && r.MonthSpent > b;
                                 <tr>
                                     <td><span class="cat-badge cat-@r.Category.Color">@r.Category.Name</span></td>
-                                    <td class="num @(over ? "text-over" : "")">
-                                        @r.MonthSpent.ToString("N2")
-                                        @if (r.MonthSpent > 0)
-                                        {
-                                            <SecondaryAmount Value="r.MonthSpent" />
-                                        }
-                                    </td>
+                                    <td class="num @(over ? "text-over" : "")">@r.MonthSpent.ToString("N2")</td>
                                     <td class="num">
                                         @if (r.Category.MonthlyBudget is { } budget)
                                         {

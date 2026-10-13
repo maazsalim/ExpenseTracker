@@ -1,0 +1,63 @@
+@* CAD | AED toggle for which currency totals are shown in. The choice is remembered in the browser. *@
+@inject DisplayCurrency Display
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="currency-switch" role="group" aria-label="Show totals in">
+    @foreach (var currency in new[] { Display.Home, Display.Secondary })
+    {
+        var unavailable = currency == Display.Secondary && !Display.SecondaryAvailable;
+        <button type="button" class="@(Display.Current == currency ? "active" : "")"
+                aria-pressed="@(Display.Current == currency)" disabled="@unavailable"
+                title="@(unavailable ? "Exchange rate unavailable right now" : $"Show totals in {currency}")"
+                @onclick="() => ChooseAsync(currency)">
+            @currency
+        </button>
+    }
+</div>
+
+@code {
+    private const string StorageKey = "displayCurrency";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Display.Changed += OnChanged;
+        await Display.InitializeAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            var saved = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey);
+            if (saved is not null && saved != Display.Current)
+                await Display.SetAsync(saved);
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException)
+        {
+            // Storage unavailable (private browsing, prerendering); keep the default.
+        }
+    }
+
+    private async Task ChooseAsync(string currency)
+    {
+        if (!await Display.SetAsync(currency))
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", StorageKey, currency);
+        }
+        catch (JSException)
+        {
+            // Not remembered, but the switch still works for this visit.
+        }
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Display.Changed -= OnChanged;
+}

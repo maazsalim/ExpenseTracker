@@ -166,6 +166,10 @@ namespace ExpenseTracker.Migrations
                         .HasPrecision(12, 2)
                         .HasColumnType("numeric(12,2)");
 
+                    b.Property<decimal>("AmountInSecondary")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
                     b.Property<int>("CategoryId")
                         .HasColumnType("integer");
 
@@ -188,6 +192,10 @@ namespace ExpenseTracker.Migrations
 
                     b.Property<DateOnly>("RateDate")
                         .HasColumnType("date");
+
+                    b.Property<decimal>("SecondaryFxRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)");
 
                     b.HasKey("Id");
 

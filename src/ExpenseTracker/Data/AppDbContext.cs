@@ -16,6 +16,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         b.Entity<Expense>().Property(e => e.Currency).HasMaxLength(3);
         b.Entity<Expense>().Property(e => e.FxRate).HasPrecision(18, 8);
         b.Entity<Expense>().Property(e => e.AmountInHome).HasPrecision(12, 2);
+        b.Entity<Expense>().Property(e => e.SecondaryFxRate).HasPrecision(18, 8);
+        b.Entity<Expense>().Property(e => e.AmountInSecondary).HasPrecision(12, 2);
 
         // Deleting a category must never silently delete its expenses.
         b.Entity<Expense>()
