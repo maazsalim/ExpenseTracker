@@ -1,0 +1,256 @@
+@page "/categories"
+@rendermode InteractiveServer
+@inject IDbContextFactory<AppDbContext> DbFactory
+
+<PageTitle>Categories · ExpenseTracker</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Categories</h1>
+        <p>Organise your spending and set monthly budgets.</p>
+    </div>
+</div>
+
+@if (!loaded)
+{
+    <div class="card-panel loading">
+        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Loading categories…
+    </div>
+}
+else
+{
+    <div class="two-col">
+        <div class="card-panel">
+            <div class="card-panel-header">
+                <h2 class="fs-6 fw-semibold mb-0">@(editingId is null ? "New category" : "Edit category")</h2>
+            </div>
+
+            <EditForm Model="form" OnValidSubmit="SaveAsync">
+                <DataAnnotationsValidator />
+
+                <div class="card-panel-body">
+                    <div class="mb-3">
+                        <label class="form-label" for="cat-name">Name</label>
+                        <InputText id="cat-name" class="form-control" placeholder="e.g. Groceries" @bind-Value="form.Name" />
+                        <ValidationMessage For="() => form.Name" />
+                        @if (nameError is not null)
+                        {
+                            <div class="validation-message">@nameError</div>
+                        }
+                    </div>
+
+                    <div class="mb-3">
+                        <span class="form-label d-block">Colour</span>
+                        <div class="swatches" role="radiogroup" aria-label="Colour">
+                            @foreach (var color in Category.Colors)
+                            {
+                                <button type="button" role="radio" aria-checked="@(form.Color == color)" aria-label="@color"
+                                        title="@color" class="swatch bar-@color @(form.Color == color ? "selected" : "")"
+                                        @onclick="() => form.Color = color"></button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="cat-budget">Monthly budget <span class="muted fw-normal">(optional)</span></label>
+                        <InputNumber id="cat-budget" class="form-control" step="0.01" placeholder="No budget" @bind-Value="form.MonthlyBudget" />
+                        <ValidationMessage For="() => form.MonthlyBudget" />
+                    </div>
+
+                    <div>
+                        <span class="form-label d-block">Preview</span>
+                        <span class="cat-badge cat-@form.Color">@(string.IsNullOrWhiteSpace(form.Name) ? "Category" : form.Name)</span>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    @if (editingId is not null)
+                    {
+                        <button type="button" class="btn btn-light" @onclick="ResetForm">Cancel</button>
+                    }
+                    <button type="submit" class="btn btn-primary" disabled="@saving">
+                        @(editingId is null ? "Add category" : "Save changes")
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+
+        <div class="card-panel">
+            @if (rows.Count == 0)
+            {
+                <div class="empty-state">
+                    <h2>No categories yet</h2>
+                    <p class="mb-0">Add one to start organising your expenses.</p>
+                </div>
+            }
+            else
+            {
+                <div class="table-scroll">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th class="num">This month</th>
+                                <th class="num">Budget</th>
+                                <th class="num">Expenses</th>
+                                <th><span class="visually-hidden">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in rows)
+                            {
+                                var over = r.Category.MonthlyBudget is { } b && r.MonthSpent > b;
+                                <tr>
+                                    <td><span class="cat-badge cat-@r.Category.Color">@r.Category.Name</span></td>
+                                    <td class="num @(over ? "text-over" : "")">@r.MonthSpent.ToString("N2")</td>
+                                    <td class="num">
+                                        @if (r.Category.MonthlyBudget is { } budget)
+                                        {
+                                            @budget.ToString("N2")
+                                        }
+                                        else
+                                        {
+                                            <span class="muted">—</span>
+                                        }
+                                    </td>
+                                    <td class="num muted">@r.ExpenseCount</td>
+                                    <td>
+                                        <div class="row-actions">
+                                            @if (pendingDeleteId == r.Category.Id)
+                                            {
+                                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteAsync(r)">Delete</button>
+                                                <button class="btn btn-sm btn-light" @onclick="() => pendingDeleteId = null">Cancel</button>
+                                            }
+                                            else
+                                            {
+                                                <button class="btn btn-icon" title="Edit" aria-label="Edit @r.Category.Name" @onclick="() => StartEdit(r.Category)">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                                                </button>
+                                                <button class="btn btn-icon danger" aria-label="Delete @r.Category.Name"
+                                                        title="@(r.ExpenseCount > 0 ? "Can't delete: category has expenses" : "Delete")"
+                                                        disabled="@(r.ExpenseCount > 0)" @onclick="() => pendingDeleteId = r.Category.Id">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private record CategoryRow(Category Category, int ExpenseCount, decimal MonthSpent);
+
+    private List<CategoryRow> rows = new();
+    private bool loaded;
+    private bool saving;
+
+    private Category form = new();
+    private int? editingId;
+    private string? nameError;
+    private int? pendingDeleteId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        ResetForm();
+    }
+
+    private async Task LoadAsync()
+    {
+        var today = DateTime.Today;
+        var start = new DateOnly(today.Year, today.Month, 1);
+        var end = start.AddMonths(1);
+
+        using var db = await DbFactory.CreateDbContextAsync();
+        rows = await db.Categories
+            .OrderBy(c => c.Name)
+            .Select(c => new CategoryRow(
+                c,
+                c.Expenses.Count,
+                c.Expenses.Where(e => e.Date >= start && e.Date < end).Sum(e => e.Amount)))
+            .ToListAsync();
+        loaded = true;
+    }
+
+    private void StartEdit(Category c)
+    {
+        editingId = c.Id;
+        form = new Category { Id = c.Id, Name = c.Name, Color = c.Color, MonthlyBudget = c.MonthlyBudget };
+        nameError = null;
+        pendingDeleteId = null;
+    }
+
+    private void ResetForm()
+    {
+        editingId = null;
+        form = new Category { Color = NextUnusedColor() };
+        nameError = null;
+    }
+
+    private string NextUnusedColor() =>
+        Category.Colors.FirstOrDefault(c => rows.All(r => r.Category.Color != c)) ?? Category.Colors[0];
+
+    private async Task SaveAsync()
+    {
+        form.Name = form.Name.Trim();
+        if (rows.Any(r => r.Category.Id != editingId
+                          && string.Equals(r.Category.Name, form.Name, StringComparison.OrdinalIgnoreCase)))
+        {
+            nameError = "A category with this name already exists.";
+            return;
+        }
+
+        saving = true;
+        try
+        {
+            using var db = await DbFactory.CreateDbContextAsync();
+            if (editingId is null)
+            {
+                db.Categories.Add(new Category { Name = form.Name, Color = form.Color, MonthlyBudget = form.MonthlyBudget });
+            }
+            else
+            {
+                var existing = await db.Categories.FindAsync(editingId);
+                if (existing is not null)
+                {
+                    existing.Name = form.Name;
+                    existing.Color = form.Color;
+                    existing.MonthlyBudget = form.MonthlyBudget;
+                }
+            }
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            nameError = "Couldn't save. A category with this name may already exist.";
+            return;
+        }
+        finally
+        {
+            saving = false;
+        }
+
+        await LoadAsync();
+        ResetForm();
+    }
+
+    private async Task DeleteAsync(CategoryRow r)
+    {
+        pendingDeleteId = null;
+        if (r.ExpenseCount > 0)
+            return;
+
+        using var db = await DbFactory.CreateDbContextAsync();
+        await db.Categories.Where(c => c.Id == r.Category.Id && !c.Expenses.Any()).ExecuteDeleteAsync();
+        if (editingId == r.Category.Id)
+            ResetForm();
+        await LoadAsync();
+    }
+}

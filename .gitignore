@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+*.user
+.vs/
+.vscode/
+.idea/
+TestResults/
+
+# macOS
+.DS_Store
+
+# Local settings and secrets
+appsettings.*.local.json
+*.env
+.env*
+
+# Local Claude Code config and notes (kept private)
+.claude/
+CLAUDE.md

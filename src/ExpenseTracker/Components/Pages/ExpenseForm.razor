@@ -1,0 +1,118 @@
+@page "/expenses/new"
+@page "/expenses/{Id:int}"
+@rendermode InteractiveServer
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject NavigationManager Nav
+
+<PageTitle>@Title · ExpenseTracker</PageTitle>
+
+<div class="page-header">
+    <div>
+        <a href="" class="back-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+            Back to expenses
+        </a>
+        <h1>@Title</h1>
+        <p>@(Id is null ? "Record a new expense." : "Update the details of this expense.")</p>
+    </div>
+</div>
+
+<div class="card-panel form-card">
+    @if (!loaded)
+    {
+        <div class="loading">
+            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Loading…
+        </div>
+    }
+    else if (expense is null)
+    {
+        <div class="empty-state">
+            <h2>Expense not found</h2>
+            <p class="mb-3">It may have been deleted.</p>
+            <a href="" class="btn btn-light">Back to expenses</a>
+        </div>
+    }
+    else
+    {
+        <EditForm Model="expense" OnValidSubmit="SaveAsync">
+            <DataAnnotationsValidator />
+
+            <div class="card-panel-body">
+                <div class="mb-3">
+                    <label class="form-label" for="description">Description</label>
+                    <InputText id="description" class="form-control" placeholder="e.g. Weekly groceries" @bind-Value="expense.Description" />
+                    <ValidationMessage For="() => expense.Description" />
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-sm-6">
+                        <label class="form-label" for="amount">Amount</label>
+                        <InputNumber id="amount" class="form-control" step="0.01" @bind-Value="expense.Amount" />
+                        <ValidationMessage For="() => expense.Amount" />
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label" for="date">Date</label>
+                        <InputDate id="date" class="form-control" @bind-Value="expense.Date" />
+                    </div>
+                </div>
+
+                <div>
+                    <div class="d-flex justify-content-between">
+                        <label class="form-label" for="category">Category</label>
+                        <a href="categories" class="small text-decoration-none">Manage categories</a>
+                    </div>
+                    <InputSelect id="category" class="form-select" @bind-Value="expense.CategoryId">
+                        <option value="0">Select a category…</option>
+                        @foreach (var c in categories)
+                        {
+                            <option value="@c.Id">@c.Name</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => expense.CategoryId" />
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <a href="" class="btn btn-light">Cancel</a>
+                <button type="submit" class="btn btn-primary" disabled="@saving">
+                    @if (saving)
+                    {
+                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                    }
+                    @(Id is null ? "Add expense" : "Save changes")
+                </button>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private Expense? expense;
+    private List<Category> categories = new();
+    private bool loaded;
+    private bool saving;
+
+    private string Title => Id is null ? "Add expense" : "Edit expense";
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var db = await DbFactory.CreateDbContextAsync();
+        categories = await db.Categories.OrderBy(c => c.Name).ToListAsync();
+        expense = Id is null ? new Expense() : await db.Expenses.FindAsync(Id);
+        loaded = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        using var db = await DbFactory.CreateDbContextAsync();
+        if (Id is null)
+            db.Expenses.Add(expense!);
+        else
+            db.Expenses.Update(expense!);
+        await db.SaveChangesAsync();
+        Nav.NavigateTo("");
+    }
+}

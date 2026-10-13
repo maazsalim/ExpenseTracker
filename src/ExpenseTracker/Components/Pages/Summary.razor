@@ -1,0 +1,191 @@
+@page "/summary"
+@rendermode InteractiveServer
+@inject IDbContextFactory<AppDbContext> DbFactory
+
+<PageTitle>Summary · ExpenseTracker</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Monthly summary</h1>
+        <p>See where your money went, by category.</p>
+    </div>
+    <div class="month-nav">
+        <button class="btn btn-icon" title="Previous month" aria-label="Previous month" @onclick="() => ChangeMonth(-1)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        </button>
+        <span class="month-label">@month.ToString("MMMM yyyy")</span>
+        <button class="btn btn-icon" title="Next month" aria-label="Next month" @onclick="() => ChangeMonth(1)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+        </button>
+    </div>
+</div>
+
+@if (!loaded)
+{
+    <div class="card-panel loading">
+        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Loading summary…
+    </div>
+}
+else
+{
+    <div class="stat-grid">
+        <div class="card-panel stat-card">
+            <div class="stat-label">Total spent</div>
+            <div class="stat-value">@total.ToString("N2")</div>
+            <div class="stat-sub">@count @(count == 1 ? "expense" : "expenses")</div>
+        </div>
+        <div class="card-panel stat-card">
+            <div class="stat-label">Daily average</div>
+            <div class="stat-value">@DailyAverage.ToString("N2")</div>
+            <div class="stat-sub">over @DaysCounted @(DaysCounted == 1 ? "day" : "days")</div>
+        </div>
+        <div class="card-panel stat-card">
+            <div class="stat-label">Top category</div>
+            <div class="stat-value">@(Spending.FirstOrDefault()?.Name ?? "—")</div>
+            <div class="stat-sub">@(Spending.Count == 0 ? "No spending" : $"{Percent(Spending[0])}% of total")</div>
+        </div>
+    </div>
+
+    <div class="card-panel mb-4">
+        <div class="card-panel-header">
+            <h2 class="fs-6 fw-semibold mb-0">Budgets</h2>
+            <a href="categories" class="small fw-medium text-decoration-none">Manage budgets</a>
+        </div>
+
+        @if (Budgeted.Count == 0)
+        {
+            <div class="empty-state">
+                <h2>No budgets set</h2>
+                <p class="mb-3">Give a category a monthly budget to track it here.</p>
+                <a href="categories" class="btn btn-light">Set a budget</a>
+            </div>
+        }
+        else
+        {
+            <div class="card-panel-body">
+                @foreach (var r in Budgeted)
+                {
+                    var budget = r.Budget!.Value;
+                    var remaining = budget - r.Amount;
+                    <div class="breakdown-row">
+                        <div class="breakdown-top">
+                            <span class="cat-badge cat-@r.Color">@r.Name</span>
+                            <span class="num">
+                                <span class="fw-semibold @(remaining < 0 ? "text-over" : "")">@r.Amount.ToString("N2")</span>
+                                <span class="muted"> / @budget.ToString("N2")</span>
+                            </span>
+                        </div>
+                        <div class="breakdown-track">
+                            <div class="breakdown-bar @(remaining < 0 ? "bar-over" : $"bar-{r.Color}")" style="width: @BudgetPercent(r)%"></div>
+                        </div>
+                        <div class="budget-meta">
+                            <span class="muted">@((int)Math.Round(r.Amount / budget * 100))% used</span>
+                            @if (remaining < 0)
+                            {
+                                <span class="text-over">@((-remaining).ToString("N2")) over</span>
+                            }
+                            else
+                            {
+                                <span class="muted">@remaining.ToString("N2") left</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="card-panel">
+        <div class="card-panel-header">
+            <h2 class="fs-6 fw-semibold mb-0">Spending by category</h2>
+        </div>
+
+        @if (Spending.Count == 0)
+        {
+            <div class="empty-state">
+                <h2>No expenses this month</h2>
+                <p class="mb-0">Pick another month or add some expenses.</p>
+            </div>
+        }
+        else
+        {
+            <div class="card-panel-body">
+                @foreach (var r in Spending)
+                {
+                    <div class="breakdown-row">
+                        <div class="breakdown-top">
+                            <span class="cat-badge cat-@r.Color">@r.Name</span>
+                            <span class="num">
+                                <span class="fw-semibold">@r.Amount.ToString("N2")</span>
+                                <span class="muted ms-2">@Percent(r)%</span>
+                            </span>
+                        </div>
+                        <div class="breakdown-track">
+                            <div class="breakdown-bar bar-@r.Color" style="width: @Percent(r)%"></div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private record CategoryTotal(string Name, string Color, decimal? Budget, decimal Amount);
+
+    private DateOnly month = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private List<CategoryTotal> rows = new();
+    private decimal total;
+    private int count;
+    private bool loaded;
+
+    private List<CategoryTotal> Spending => rows.Where(r => r.Amount > 0).OrderByDescending(r => r.Amount).ToList();
+    private List<CategoryTotal> Budgeted => rows.Where(r => r.Budget is not null).OrderBy(r => r.Name).ToList();
+
+    // For the current month only count days elapsed so far; past months use the full month.
+    private int DaysCounted
+    {
+        get
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            if (today.Year == month.Year && today.Month == month.Month)
+                return today.Day;
+            return DateTime.DaysInMonth(month.Year, month.Month);
+        }
+    }
+
+    private decimal DailyAverage => total / DaysCounted;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task ChangeMonth(int delta)
+    {
+        month = month.AddMonths(delta);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var start = month;
+        var end = month.AddMonths(1);
+
+        using var db = await DbFactory.CreateDbContextAsync();
+        rows = await db.Categories
+            .Select(c => new CategoryTotal(
+                c.Name,
+                c.Color,
+                c.MonthlyBudget,
+                c.Expenses.Where(e => e.Date >= start && e.Date < end).Sum(e => e.Amount)))
+            .ToListAsync();
+        count = await db.Expenses.CountAsync(e => e.Date >= start && e.Date < end);
+
+        total = rows.Sum(r => r.Amount);
+        loaded = true;
+    }
+
+    private int Percent(CategoryTotal r) =>
+        total == 0 ? 0 : (int)Math.Round(r.Amount / total * 100);
+
+    private static int BudgetPercent(CategoryTotal r) =>
+        r.Budget is not > 0 ? 0 : (int)Math.Min(100, Math.Round(r.Amount / r.Budget.Value * 100));
+}

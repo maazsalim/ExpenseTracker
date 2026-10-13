@@ -1,0 +1,220 @@
+@page "/"
+@page "/expenses"
+@rendermode InteractiveServer
+@inject IDbContextFactory<AppDbContext> DbFactory
+
+<PageTitle>Expenses · ExpenseTracker</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Expenses</h1>
+        <p>Track and manage everything you spend.</p>
+    </div>
+    <a href="expenses/new" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        Add expense
+    </a>
+</div>
+
+@if (!loaded)
+{
+    <div class="card-panel loading">
+        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Loading expenses…
+    </div>
+}
+else
+{
+    <div class="stat-grid">
+        <div class="card-panel stat-card">
+            <div class="stat-label">This month</div>
+            <div class="stat-value">@monthTotal.ToString("N2")</div>
+            <div class="stat-sub">@monthCount @(monthCount == 1 ? "expense" : "expenses") in @DateTime.Today.ToString("MMMM")</div>
+        </div>
+        <div class="card-panel stat-card">
+            <div class="stat-label">Budget remaining</div>
+            @if (budgetTotal > 0)
+            {
+                var remaining = budgetTotal - budgetSpent;
+                <div class="stat-value @(remaining < 0 ? "text-over" : "")">@Math.Abs(remaining).ToString("N2")@(remaining < 0 ? " over" : "")</div>
+                <div class="breakdown-track mt-2">
+                    <div class="breakdown-bar @(remaining < 0 ? "bar-over" : "bar-indigo")" style="width: @BudgetPercent%"></div>
+                </div>
+                <div class="stat-sub mt-1">@budgetSpent.ToString("N2") of @budgetTotal.ToString("N2") budgeted</div>
+            }
+            else
+            {
+                <div class="stat-value muted">—</div>
+                <div class="stat-sub"><a href="categories">Set a monthly budget</a></div>
+            }
+        </div>
+        <div class="card-panel stat-card">
+            <div class="stat-label">Top category this month</div>
+            <div class="stat-value">@(topCategory?.Name ?? "—")</div>
+            <div class="stat-sub">@(topCategory is null ? "No spending yet" : $"{topCategory.Amount:N2} spent")</div>
+        </div>
+        <div class="card-panel stat-card">
+            <div class="stat-label">All time</div>
+            <div class="stat-value">@expenses.Sum(e => e.Amount).ToString("N2")</div>
+            <div class="stat-sub">@expenses.Count @(expenses.Count == 1 ? "expense" : "expenses") recorded</div>
+        </div>
+    </div>
+
+    <div class="card-panel">
+        @if (expenses.Count == 0)
+        {
+            <div class="empty-state">
+                <div class="empty-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4Z" /></svg>
+                </div>
+                <h2>No expenses yet</h2>
+                <p class="mb-3">Add your first expense to start tracking your spending.</p>
+                <a href="expenses/new" class="btn btn-primary">Add expense</a>
+            </div>
+        }
+        else
+        {
+            <div class="card-panel-header">
+                <div class="input-icon flex-grow-1" style="max-width: 320px;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+                    <input class="form-control" placeholder="Search descriptions…" aria-label="Search descriptions"
+                           @bind="search" @bind:event="oninput" />
+                </div>
+                <select class="form-select w-auto" aria-label="Filter by category" @bind="categoryFilter">
+                    <option value="0">All categories</option>
+                    @foreach (var c in categories)
+                    {
+                        <option value="@c.Id">@c.Name</option>
+                    }
+                </select>
+            </div>
+
+            @if (Filtered.Count == 0)
+            {
+                <div class="empty-state">
+                    <h2>No matching expenses</h2>
+                    <p class="mb-0">Try a different search or category.</p>
+                </div>
+            }
+            else
+            {
+                <div class="table-scroll">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Category</th>
+                                <th class="num">Amount</th>
+                                <th><span class="visually-hidden">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var e in Filtered)
+                            {
+                                <tr>
+                                    <td class="muted text-nowrap">@e.Date.ToString("dd MMM yyyy")</td>
+                                    <td class="fw-medium">@e.Description</td>
+                                    <td><span class="cat-badge cat-@e.Category?.Color">@e.Category?.Name</span></td>
+                                    <td class="num fw-semibold">@e.Amount.ToString("N2")</td>
+                                    <td>
+                                        <div class="row-actions">
+                                            @if (pendingDeleteId == e.Id)
+                                            {
+                                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteAsync(e)">Delete</button>
+                                                <button class="btn btn-sm btn-light" @onclick="() => pendingDeleteId = null">Cancel</button>
+                                            }
+                                            else
+                                            {
+                                                <a href="expenses/@e.Id" class="btn btn-icon" title="Edit" aria-label="Edit @e.Description">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                                                </a>
+                                                <button class="btn btn-icon danger" title="Delete" aria-label="Delete @e.Description" @onclick="() => pendingDeleteId = e.Id">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3">@Filtered.Count @(Filtered.Count == 1 ? "expense" : "expenses")</td>
+                                <td class="num">@Filtered.Sum(e => e.Amount).ToString("N2")</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    private record CategoryTotal(string Name, decimal Amount);
+
+    private List<Expense> expenses = new();
+    private List<Category> categories = new();
+    private bool loaded;
+
+    private string search = "";
+    private int categoryFilter;
+    private int? pendingDeleteId;
+
+    private decimal monthTotal;
+    private int monthCount;
+    private CategoryTotal? topCategory;
+    private decimal budgetTotal;
+    private decimal budgetSpent;
+
+    private int BudgetPercent => budgetTotal == 0 ? 0 : (int)Math.Min(100, Math.Round(budgetSpent / budgetTotal * 100));
+
+    private List<Expense> Filtered => expenses
+        .Where(e => categoryFilter == 0 || e.CategoryId == categoryFilter)
+        .Where(e => string.IsNullOrWhiteSpace(search)
+                    || e.Description.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var db = await DbFactory.CreateDbContextAsync();
+        categories = await db.Categories.OrderBy(c => c.Name).ToListAsync();
+        expenses = await db.Expenses
+            .Include(e => e.Category)
+            .OrderByDescending(e => e.Date)
+            .ThenByDescending(e => e.Id)
+            .ToListAsync();
+        ComputeStats();
+        loaded = true;
+    }
+
+    private void ComputeStats()
+    {
+        var today = DateTime.Today;
+        var thisMonth = expenses.Where(e => e.Date.Year == today.Year && e.Date.Month == today.Month).ToList();
+        monthTotal = thisMonth.Sum(e => e.Amount);
+        monthCount = thisMonth.Count;
+        topCategory = thisMonth
+            .GroupBy(e => e.Category?.Name ?? "Uncategorised")
+            .Select(g => new CategoryTotal(g.Key, g.Sum(e => e.Amount)))
+            .OrderByDescending(c => c.Amount)
+            .FirstOrDefault();
+
+        // Only spending in categories that have a budget counts against it.
+        var budgeted = categories.Where(c => c.MonthlyBudget is not null).ToList();
+        budgetTotal = budgeted.Sum(c => c.MonthlyBudget!.Value);
+        budgetSpent = thisMonth
+            .Where(e => budgeted.Any(c => c.Id == e.CategoryId))
+            .Sum(e => e.Amount);
+    }
+
+    private async Task DeleteAsync(Expense e)
+    {
+        using var db = await DbFactory.CreateDbContextAsync();
+        await db.Expenses.Where(x => x.Id == e.Id).ExecuteDeleteAsync();
+        expenses.Remove(e);
+        pendingDeleteId = null;
+        ComputeStats();
+    }
+}
