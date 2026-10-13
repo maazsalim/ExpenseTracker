@@ -1,6 +1,7 @@
 @page "/summary"
 @rendermode InteractiveServer
 @inject IDbContextFactory<AppDbContext> DbFactory
+@inject IOptions<CurrencyOptions> CurrencyOptions
 
 <PageTitle>Summary · ExpenseTracker</PageTitle>
 
@@ -31,12 +32,12 @@ else
     <div class="stat-grid">
         <div class="card-panel stat-card">
             <div class="stat-label">Total spent</div>
-            <div class="stat-value">@total.ToString("N2")</div>
+            <div class="stat-value">@Money.Format(total, Home)</div>
             <div class="stat-sub">@count @(count == 1 ? "expense" : "expenses")</div>
         </div>
         <div class="card-panel stat-card">
             <div class="stat-label">Daily average</div>
-            <div class="stat-value">@DailyAverage.ToString("N2")</div>
+            <div class="stat-value">@Money.Format(DailyAverage, Home)</div>
             <div class="stat-sub">over @DaysCounted @(DaysCounted == 1 ? "day" : "days")</div>
         </div>
         <div class="card-panel stat-card">
@@ -71,7 +72,7 @@ else
                         <div class="breakdown-top">
                             <span class="cat-badge cat-@r.Color">@r.Name</span>
                             <span class="num">
-                                <span class="fw-semibold @(remaining < 0 ? "text-over" : "")">@r.Amount.ToString("N2")</span>
+                                <span class="fw-semibold @(remaining < 0 ? "text-over" : "")">@Money.Format(r.Amount, Home)</span>
                                 <span class="muted"> / @budget.ToString("N2")</span>
                             </span>
                         </div>
@@ -82,11 +83,11 @@ else
                             <span class="muted">@((int)Math.Round(r.Amount / budget * 100))% used</span>
                             @if (remaining < 0)
                             {
-                                <span class="text-over">@((-remaining).ToString("N2")) over</span>
+                                <span class="text-over">@Money.Format(-remaining, Home) over</span>
                             }
                             else
                             {
-                                <span class="muted">@remaining.ToString("N2") left</span>
+                                <span class="muted">@Money.Format(remaining, Home) left</span>
                             }
                         </div>
                     </div>
@@ -116,7 +117,7 @@ else
                         <div class="breakdown-top">
                             <span class="cat-badge cat-@r.Color">@r.Name</span>
                             <span class="num">
-                                <span class="fw-semibold">@r.Amount.ToString("N2")</span>
+                                <span class="fw-semibold">@Money.Format(r.Amount, Home)</span>
                                 <span class="muted ms-2">@Percent(r)%</span>
                             </span>
                         </div>
@@ -131,6 +132,8 @@ else
 }
 
 @code {
+    private string Home => CurrencyOptions.Value.HomeCurrency;
+
     private record CategoryTotal(string Name, string Color, decimal? Budget, decimal Amount);
 
     private DateOnly month = new(DateTime.Today.Year, DateTime.Today.Month, 1);
@@ -175,7 +178,7 @@ else
                 c.Name,
                 c.Color,
                 c.MonthlyBudget,
-                c.Expenses.Where(e => e.Date >= start && e.Date < end).Sum(e => e.Amount)))
+                c.Expenses.Where(e => e.Date >= start && e.Date < end).Sum(e => e.AmountInHome)))
             .ToListAsync();
         count = await db.Expenses.CountAsync(e => e.Date >= start && e.Date < end);
 

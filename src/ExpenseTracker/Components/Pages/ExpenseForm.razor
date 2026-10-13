@@ -3,6 +3,8 @@
 @rendermode InteractiveServer
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject NavigationManager Nav
+@inject IExchangeRateService Fx
+@inject IOptions<CurrencyOptions> CurrencyOptions
 
 <PageTitle>@Title · ExpenseTracker</PageTitle>
 
@@ -47,7 +49,15 @@
                 <div class="row g-3 mb-3">
                     <div class="col-sm-6">
                         <label class="form-label" for="amount">Amount</label>
-                        <InputNumber id="amount" class="form-control" step="0.01" @bind-Value="expense.Amount" />
+                        <div class="input-group">
+                            <InputNumber id="amount" class="form-control" step="0.01" @bind-Value="expense.Amount" />
+                            <InputSelect class="form-select currency-select" aria-label="Currency" @bind-Value="expense.Currency">
+                                @foreach (var currency in Currencies.Supported)
+                                {
+                                    <option value="@currency">@currency</option>
+                                }
+                            </InputSelect>
+                        </div>
                         <ValidationMessage For="() => expense.Amount" />
                     </div>
                     <div class="col-sm-6">
@@ -72,6 +82,11 @@
                 </div>
             </div>
 
+            @if (error is not null)
+            {
+                <div class="alert alert-danger mx-3 mb-3" role="alert">@error</div>
+            }
+
             <div class="form-actions">
                 <a href="" class="btn btn-light">Cancel</a>
                 <button type="submit" class="btn btn-primary" disabled="@saving">
@@ -93,6 +108,11 @@
     private List<Category> categories = new();
     private bool loaded;
     private bool saving;
+    private string? error;
+
+    // What the stored conversion was based on, so an edit only re-fetches the rate when needed.
+    private string? originalCurrency;
+    private DateOnly originalDate;
 
     private string Title => Id is null ? "Add expense" : "Edit expense";
 
@@ -100,13 +120,36 @@
     {
         using var db = await DbFactory.CreateDbContextAsync();
         categories = await db.Categories.OrderBy(c => c.Name).ToListAsync();
-        expense = Id is null ? new Expense() : await db.Expenses.FindAsync(Id);
+        expense = Id is null
+            ? new Expense { Currency = CurrencyOptions.Value.DefaultExpenseCurrency }
+            : await db.Expenses.FindAsync(Id);
+        originalCurrency = expense?.Currency;
+        originalDate = expense?.Date ?? default;
         loaded = true;
     }
 
     private async Task SaveAsync()
     {
         saving = true;
+        error = null;
+
+        if (Id is null || expense!.Currency != originalCurrency || expense.Date != originalDate)
+        {
+            try
+            {
+                var quote = await Fx.GetRateAsync(expense!.Currency, CurrencyOptions.Value.HomeCurrency, expense.Date);
+                expense.FxRate = quote.Rate;
+                expense.RateDate = quote.RateDate;
+            }
+            catch (ExchangeRateUnavailableException ex)
+            {
+                error = $"{ex.Message} Check your connection and try again.";
+                saving = false;
+                return;
+            }
+        }
+        expense.AmountInHome = Money.Convert(expense.Amount, expense.FxRate);
+
         using var db = await DbFactory.CreateDbContextAsync();
         if (Id is null)
             db.Expenses.Add(expense!);

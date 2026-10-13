@@ -7,10 +7,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<Expense> Expenses => Set<Expense>();
     public DbSet<Category> Categories => Set<Category>();
+    public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<Expense>().Property(e => e.Amount).HasPrecision(10, 2);
+        b.Entity<Expense>().Property(e => e.Currency).HasMaxLength(3);
+        b.Entity<Expense>().Property(e => e.FxRate).HasPrecision(18, 8);
+        b.Entity<Expense>().Property(e => e.AmountInHome).HasPrecision(12, 2);
 
         // Deleting a category must never silently delete its expenses.
         b.Entity<Expense>()
@@ -22,6 +26,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         b.Entity<Category>().Property(c => c.MonthlyBudget).HasPrecision(10, 2);
         b.Entity<Category>().Property(c => c.Color).HasDefaultValue("indigo");
         b.Entity<Category>().HasIndex(c => c.Name).IsUnique();
+
+        b.Entity<ExchangeRate>(r =>
+        {
+            r.Property(x => x.Base).HasMaxLength(3);
+            r.Property(x => x.Quote).HasMaxLength(3);
+            r.Property(x => x.Source).HasMaxLength(50);
+            r.Property(x => x.Rate).HasPrecision(18, 8);
+            r.HasIndex(x => new { x.Date, x.Base, x.Quote }).IsUnique();
+        });
 
         b.Entity<Category>().HasData(
             new Category { Id = 1, Name = "Food", Color = "indigo" },

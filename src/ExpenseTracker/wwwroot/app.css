@@ -188,6 +188,19 @@ h1:focus {
     border-color: var(--border);
 }
 
+.input-group > .currency-select {
+    flex: 0 0 auto;
+    width: auto;
+}
+
+/* Converted home-currency amount shown under an original amount. */
+.amount-converted {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
 .input-icon {
     position: relative;
 }

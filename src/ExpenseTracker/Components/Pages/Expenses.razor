@@ -2,6 +2,7 @@
 @page "/expenses"
 @rendermode InteractiveServer
 @inject IDbContextFactory<AppDbContext> DbFactory
+@inject IOptions<CurrencyOptions> CurrencyOptions
 
 <PageTitle>Expenses · ExpenseTracker</PageTitle>
 
@@ -27,7 +28,7 @@ else
     <div class="stat-grid">
         <div class="card-panel stat-card">
             <div class="stat-label">This month</div>
-            <div class="stat-value">@monthTotal.ToString("N2")</div>
+            <div class="stat-value">@Money.Format(monthTotal, Home)</div>
             <div class="stat-sub">@monthCount @(monthCount == 1 ? "expense" : "expenses") in @DateTime.Today.ToString("MMMM")</div>
         </div>
         <div class="card-panel stat-card">
@@ -35,11 +36,11 @@ else
             @if (budgetTotal > 0)
             {
                 var remaining = budgetTotal - budgetSpent;
-                <div class="stat-value @(remaining < 0 ? "text-over" : "")">@Math.Abs(remaining).ToString("N2")@(remaining < 0 ? " over" : "")</div>
+                <div class="stat-value @(remaining < 0 ? "text-over" : "")">@Money.Format(Math.Abs(remaining), Home)@(remaining < 0 ? " over" : "")</div>
                 <div class="breakdown-track mt-2">
                     <div class="breakdown-bar @(remaining < 0 ? "bar-over" : "bar-indigo")" style="width: @BudgetPercent%"></div>
                 </div>
-                <div class="stat-sub mt-1">@budgetSpent.ToString("N2") of @budgetTotal.ToString("N2") budgeted</div>
+                <div class="stat-sub mt-1">@Money.Format(budgetSpent, Home) of @Money.Format(budgetTotal, Home) budgeted</div>
             }
             else
             {
@@ -50,11 +51,11 @@ else
         <div class="card-panel stat-card">
             <div class="stat-label">Top category this month</div>
             <div class="stat-value">@(topCategory?.Name ?? "—")</div>
-            <div class="stat-sub">@(topCategory is null ? "No spending yet" : $"{topCategory.Amount:N2} spent")</div>
+            <div class="stat-sub">@(topCategory is null ? "No spending yet" : $"{Money.Format(topCategory.Amount, Home)} spent")</div>
         </div>
         <div class="card-panel stat-card">
             <div class="stat-label">All time</div>
-            <div class="stat-value">@expenses.Sum(e => e.Amount).ToString("N2")</div>
+            <div class="stat-value">@Money.Format(expenses.Sum(e => e.AmountInHome), Home)</div>
             <div class="stat-sub">@expenses.Count @(expenses.Count == 1 ? "expense" : "expenses") recorded</div>
         </div>
     </div>
@@ -115,7 +116,13 @@ else
                                     <td class="muted text-nowrap">@e.Date.ToString("dd MMM yyyy")</td>
                                     <td class="fw-medium">@e.Description</td>
                                     <td><span class="cat-badge cat-@e.Category?.Color">@e.Category?.Name</span></td>
-                                    <td class="num fw-semibold">@e.Amount.ToString("N2")</td>
+                                    <td class="num fw-semibold text-nowrap">
+                                        @Money.Format(e.Amount, e.Currency)
+                                        @if (e.Currency != Home)
+                                        {
+                                            <span class="amount-converted" title="@($"1 {e.Currency} = {e.FxRate:0.######} {Home} on {e.RateDate:d MMM yyyy}")">@Money.Format(e.AmountInHome, Home)</span>
+                                        }
+                                    </td>
                                     <td>
                                         <div class="row-actions">
                                             @if (pendingDeleteId == e.Id)
@@ -140,7 +147,7 @@ else
                         <tfoot>
                             <tr>
                                 <td colspan="3">@Filtered.Count @(Filtered.Count == 1 ? "expense" : "expenses")</td>
-                                <td class="num">@Filtered.Sum(e => e.Amount).ToString("N2")</td>
+                                <td class="num text-nowrap">@Money.Format(Filtered.Sum(e => e.AmountInHome), Home)</td>
                                 <td></td>
                             </tr>
                         </tfoot>
@@ -168,6 +175,8 @@ else
     private decimal budgetTotal;
     private decimal budgetSpent;
 
+    private string Home => CurrencyOptions.Value.HomeCurrency;
+
     private int BudgetPercent => budgetTotal == 0 ? 0 : (int)Math.Min(100, Math.Round(budgetSpent / budgetTotal * 100));
 
     private List<Expense> Filtered => expenses
@@ -193,11 +202,11 @@ else
     {
         var today = DateTime.Today;
         var thisMonth = expenses.Where(e => e.Date.Year == today.Year && e.Date.Month == today.Month).ToList();
-        monthTotal = thisMonth.Sum(e => e.Amount);
+        monthTotal = thisMonth.Sum(e => e.AmountInHome);
         monthCount = thisMonth.Count;
         topCategory = thisMonth
             .GroupBy(e => e.Category?.Name ?? "Uncategorised")
-            .Select(g => new CategoryTotal(g.Key, g.Sum(e => e.Amount)))
+            .Select(g => new CategoryTotal(g.Key, g.Sum(e => e.AmountInHome)))
             .OrderByDescending(c => c.Amount)
             .FirstOrDefault();
 
@@ -206,7 +215,7 @@ else
         budgetTotal = budgeted.Sum(c => c.MonthlyBudget!.Value);
         budgetSpent = thisMonth
             .Where(e => budgeted.Any(c => c.Id == e.CategoryId))
-            .Sum(e => e.Amount);
+            .Sum(e => e.AmountInHome);
     }
 
     private async Task DeleteAsync(Expense e)
