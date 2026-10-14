@@ -1,0 +1,333 @@
+@page "/recurring"
+@rendermode InteractiveServer
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject RecurringExpenseService RecurringService
+@inject IOptions<CurrencyOptions> CurrencyOptions
+
+<PageTitle>Recurring · ExpenseTracker</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Recurring</h1>
+        <p>Monthly expenses like rent and subscriptions. They're added automatically when you open the app.</p>
+    </div>
+</div>
+
+@if (!loaded)
+{
+    <div class="card-panel loading">
+        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Loading recurring items…
+    </div>
+}
+else
+{
+    @if (message is not null)
+    {
+        <div class="alert alert-success" role="status">@message</div>
+    }
+
+    <div class="two-col">
+        <div class="card-panel">
+            <div class="card-panel-header">
+                <h2 class="fs-6 fw-semibold mb-0">@(editingId is null ? "New recurring item" : "Edit recurring item")</h2>
+            </div>
+
+            <EditForm Model="form" OnValidSubmit="SaveAsync">
+                <DataAnnotationsValidator />
+
+                <div class="card-panel-body">
+                    <div class="mb-3">
+                        <label class="form-label" for="rec-description">Description</label>
+                        <InputText id="rec-description" class="form-control" placeholder="e.g. Rent, Netflix" @bind-Value="form.Description" />
+                        <ValidationMessage For="() => form.Description" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="rec-amount">Amount</label>
+                        <div class="input-group">
+                            <InputNumber id="rec-amount" class="form-control" step="0.01" @bind-Value="form.Amount" />
+                            <InputSelect class="form-select currency-select" aria-label="Currency" @bind-Value="form.Currency">
+                                @foreach (var currency in Currencies.Supported)
+                                {
+                                    <option value="@currency">@currency</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <ValidationMessage For="() => form.Amount" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="rec-category">Category</label>
+                        <InputSelect id="rec-category" class="form-select" @bind-Value="form.CategoryId">
+                            <option value="0">Select a category…</option>
+                            @foreach (var c in categories)
+                            {
+                                <option value="@c.Id">@c.Name</option>
+                            }
+                        </InputSelect>
+                        <ValidationMessage For="() => form.CategoryId" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="rec-account">Paid with</label>
+                        <InputSelect id="rec-account" class="form-select" @bind-Value="form.AccountId">
+                            <option value="">Not set</option>
+                            @foreach (var a in accounts)
+                            {
+                                <option value="@a.Id">@a.Name</option>
+                            }
+                        </InputSelect>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label" for="rec-day">Day of month</label>
+                            <InputNumber id="rec-day" class="form-control" min="1" max="31" @bind-Value="form.DayOfMonth" />
+                            <ValidationMessage For="() => form.DayOfMonth" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label" for="rec-start">Starting from</label>
+                            <InputDate id="rec-start" class="form-control" @bind-Value="form.StartDate" />
+                        </div>
+                    </div>
+                    <div class="form-text">
+                        Days past the end of a short month fall on its last day. A start date in the past adds the missed months.
+                        Changes apply to future entries only.
+                    </div>
+                </div>
+
+                @if (error is not null)
+                {
+                    <div class="alert alert-danger mx-3 mb-3" role="alert">@error</div>
+                }
+
+                <div class="form-actions">
+                    @if (editingId is not null)
+                    {
+                        <button type="button" class="btn btn-light" @onclick="ResetForm">Cancel</button>
+                    }
+                    <button type="submit" class="btn btn-primary" disabled="@saving">
+                        @(editingId is null ? "Add recurring item" : "Save changes")
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+
+        <div class="card-panel">
+            @if (items.Count == 0)
+            {
+                <div class="empty-state">
+                    <h2>No recurring items yet</h2>
+                    <p class="mb-0">Add rent, subscriptions or anything else you pay every month.</p>
+                </div>
+            }
+            else
+            {
+                <div class="table-scroll">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th class="num">Amount</th>
+                                <th>Schedule</th>
+                                <th><span class="visually-hidden">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in items)
+                            {
+                                <tr class="@(r.Active ? "" : "row-paused")">
+                                    <td>
+                                        <div class="fw-medium">@r.Description</div>
+                                        <span class="cat-badge cat-@r.Category?.Color">@r.Category?.Name</span>
+                                        @if (r.Account is not null)
+                                        {
+                                            <span class="muted small ms-1">@r.Account.Name</span>
+                                        }
+                                    </td>
+                                    <td class="num fw-semibold text-nowrap">@Money.Format(r.Amount, r.Currency)</td>
+                                    <td class="text-nowrap">
+                                        <div>Day @r.DayOfMonth</div>
+                                        <div class="muted small">@(r.Active ? $"Next: {r.NextDate:d MMM yyyy}" : "Paused")</div>
+                                    </td>
+                                    <td>
+                                        <div class="row-actions">
+                                            @if (pendingDeleteId == r.Id)
+                                            {
+                                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteAsync(r)">Delete</button>
+                                                <button class="btn btn-sm btn-light" @onclick="() => pendingDeleteId = null">Cancel</button>
+                                            }
+                                            else
+                                            {
+                                                <button class="btn btn-sm btn-light" @onclick="() => ToggleActiveAsync(r)">@(r.Active ? "Pause" : "Resume")</button>
+                                                <button class="btn btn-icon" title="Edit" aria-label="Edit @r.Description" @onclick="() => StartEdit(r)">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                                                </button>
+                                                <button class="btn btn-icon danger" title="Delete (keeps expenses already added)" aria-label="Delete @r.Description" @onclick="() => pendingDeleteId = r.Id">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private List<RecurringExpense> items = new();
+    private List<Category> categories = new();
+    private List<Account> accounts = new();
+    private bool loaded;
+    private bool saving;
+    private string? error;
+    private string? message;
+
+    private RecurringExpense form = new();
+    private int? editingId;
+    private int? pendingDeleteId;
+
+    private DateOnly Today => DateOnly.FromDateTime(DateTime.Today);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        ResetForm();
+    }
+
+    private async Task LoadAsync()
+    {
+        using var db = await DbFactory.CreateDbContextAsync();
+        categories = await db.Categories.OrderBy(c => c.Name).ToListAsync();
+        accounts = await db.Accounts.OrderBy(a => a.Name).ToListAsync();
+        items = await db.RecurringExpenses
+            .Include(r => r.Category)
+            .Include(r => r.Account)
+            .OrderBy(r => !r.Active).ThenBy(r => r.DayOfMonth).ThenBy(r => r.Description)
+            .ToListAsync();
+        loaded = true;
+    }
+
+    private void StartEdit(RecurringExpense r)
+    {
+        editingId = r.Id;
+        form = new RecurringExpense
+        {
+            Id = r.Id, Description = r.Description, Amount = r.Amount, Currency = r.Currency,
+            CategoryId = r.CategoryId, AccountId = r.AccountId, DayOfMonth = r.DayOfMonth,
+            StartDate = r.StartDate, NextDate = r.NextDate, Active = r.Active,
+        };
+        error = null;
+        message = null;
+        pendingDeleteId = null;
+    }
+
+    private void ResetForm()
+    {
+        editingId = null;
+        var currency = CurrencyOptions.Value.DefaultExpenseCurrency;
+        form = new RecurringExpense
+        {
+            Currency = currency,
+            DayOfMonth = Today.Day,
+            AccountId = accounts.FirstOrDefault(a => a.Currency == currency)?.Id,
+        };
+        error = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        error = null;
+        message = null;
+        form.Description = form.Description.Trim();
+
+        using (var db = await DbFactory.CreateDbContextAsync())
+        {
+            if (editingId is null)
+            {
+                form.NextDate = MonthlySchedule.FirstOnOrAfter(form.StartDate, form.DayOfMonth);
+                db.RecurringExpenses.Add(form);
+            }
+            else
+            {
+                var existing = await db.RecurringExpenses.FindAsync(editingId);
+                if (existing is null)
+                {
+                    error = "This item no longer exists.";
+                    saving = false;
+                    return;
+                }
+
+                // A new schedule starts from today (or the start date), never re-adding past months.
+                if (existing.DayOfMonth != form.DayOfMonth || existing.StartDate != form.StartDate)
+                {
+                    var from = form.StartDate > Today ? form.StartDate : Today;
+                    existing.NextDate = MonthlySchedule.FirstOnOrAfter(from, form.DayOfMonth);
+                }
+                existing.Description = form.Description;
+                existing.Amount = form.Amount;
+                existing.Currency = form.Currency;
+                existing.CategoryId = form.CategoryId;
+                existing.AccountId = form.AccountId;
+                existing.DayOfMonth = form.DayOfMonth;
+                existing.StartDate = form.StartDate;
+            }
+            await db.SaveChangesAsync();
+        }
+
+        await CreateDueAsync();
+        saving = false;
+        await LoadAsync();
+        ResetForm();
+    }
+
+    private async Task ToggleActiveAsync(RecurringExpense r)
+    {
+        using (var db = await DbFactory.CreateDbContextAsync())
+        {
+            var existing = await db.RecurringExpenses.FindAsync(r.Id);
+            if (existing is null)
+                return;
+
+            existing.Active = !existing.Active;
+            // Resuming doesn't add the months it was paused for.
+            if (existing.Active && existing.NextDate < Today)
+                existing.NextDate = MonthlySchedule.FirstOnOrAfter(Today, existing.DayOfMonth);
+            await db.SaveChangesAsync();
+        }
+
+        await CreateDueAsync();
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(RecurringExpense r)
+    {
+        pendingDeleteId = null;
+        using var db = await DbFactory.CreateDbContextAsync();
+        // Expenses it already added are kept (their link is cleared).
+        await db.RecurringExpenses.Where(x => x.Id == r.Id).ExecuteDeleteAsync();
+        if (editingId == r.Id)
+            ResetForm();
+        await LoadAsync();
+    }
+
+    private async Task CreateDueAsync()
+    {
+        try
+        {
+            var created = await RecurringService.CreateDueAsync();
+            if (created > 0)
+                message = $"Added {created} {(created == 1 ? "expense" : "expenses")} that {(created == 1 ? "was" : "were")} due.";
+        }
+        catch (Exception)
+        {
+            error = "Saved, but couldn't add the due expenses yet. They'll be added next time you open the app.";
+        }
+    }
+}

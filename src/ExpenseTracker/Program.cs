@@ -19,6 +19,7 @@ builder.Services.AddScoped<IExchangeRateService, ExchangeRateService>();
 builder.Services.AddScoped<ExpenseConverter>();
 builder.Services.AddScoped<SecondaryCurrencyRate>();
 builder.Services.AddScoped<DisplayCurrency>();
+builder.Services.AddScoped<RecurringExpenseService>();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()

@@ -160,8 +160,8 @@ else
                                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                                                 </button>
                                                 <button class="btn btn-icon danger" aria-label="Delete @r.Category.Name"
-                                                        title="@(r.ExpenseCount > 0 ? "Can't delete: category has expenses" : "Delete")"
-                                                        disabled="@(r.ExpenseCount > 0)" @onclick="() => pendingDeleteId = r.Category.Id">
+                                                        title="@(r.InUse ? "Can't delete: category is used by expenses or recurring items" : "Delete")"
+                                                        disabled="@r.InUse" @onclick="() => pendingDeleteId = r.Category.Id">
                                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
                                                 </button>
                                             }
@@ -180,7 +180,10 @@ else
 @code {
     private string Home => CurrencyOptions.Value.HomeCurrency;
 
-    private record CategoryRow(Category Category, int ExpenseCount, decimal MonthSpent);
+    private record CategoryRow(Category Category, int ExpenseCount, bool UsedByRecurring, decimal MonthSpent)
+    {
+        public bool InUse => ExpenseCount > 0 || UsedByRecurring;
+    }
 
     private List<CategoryRow> rows = new();
     private bool loaded;
@@ -218,6 +221,7 @@ else
             .Select(c => new CategoryRow(
                 c,
                 c.Expenses.Count,
+                db.RecurringExpenses.Any(r => r.CategoryId == c.Id),
                 c.Expenses.Where(e => e.Date >= start && e.Date < end).Sum(e => e.AmountInHome)))
             .ToListAsync();
         totalBudget = (await db.Settings.SingleAsync()).TotalMonthlyBudget;
@@ -312,11 +316,13 @@ else
     private async Task DeleteAsync(CategoryRow r)
     {
         pendingDeleteId = null;
-        if (r.ExpenseCount > 0)
+        if (r.InUse)
             return;
 
         using var db = await DbFactory.CreateDbContextAsync();
-        await db.Categories.Where(c => c.Id == r.Category.Id && !c.Expenses.Any()).ExecuteDeleteAsync();
+        await db.Categories
+            .Where(c => c.Id == r.Category.Id && !c.Expenses.Any() && !db.RecurringExpenses.Any(x => x.CategoryId == c.Id))
+            .ExecuteDeleteAsync();
         if (editingId == r.Category.Id)
             ResetForm();
         await LoadAsync();

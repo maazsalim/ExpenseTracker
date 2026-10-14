@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject DisplayCurrency Display
+@inject RecurringExpenseService Recurring
 @implements IDisposable
 
 <PageTitle>Summary · ExpenseTracker</PageTitle>
@@ -9,7 +10,7 @@
 <div class="page-header">
     <div>
         <h1>Monthly summary</h1>
-        <p>See where your money went, by category.</p>
+        <p>See where your money went: by category, currency and account.</p>
     </div>
     <div class="header-actions">
     <CurrencySwitch />
@@ -50,6 +51,46 @@ else
             <div class="stat-sub">@(Spending.Count == 0 ? "No spending" : $"{Percent(Spending[0])}% of total")</div>
         </div>
     </div>
+
+    @if (count > 0)
+    {
+        <div class="summary-split mb-4">
+            <div class="card-panel">
+                <div class="card-panel-header">
+                    <h2 class="fs-6 fw-semibold mb-0">Paid in</h2>
+                </div>
+                <div class="card-panel-body">
+                    @foreach (var c in byCurrency)
+                    {
+                        <div class="split-row">
+                            <span>@c.Currency <span class="muted small">· @c.Count @(c.Count == 1 ? "expense" : "expenses")</span></span>
+                            <span class="num fw-semibold">@Money.Format(c.Amount, c.Currency)</span>
+                        </div>
+                    }
+                    <div class="split-row split-total">
+                        <span>Total in @Display.Current</span>
+                        <span class="num fw-semibold">@Display.Format(total)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-panel">
+                <div class="card-panel-header">
+                    <h2 class="fs-6 fw-semibold mb-0">Paid with</h2>
+                    <a href="accounts" class="small fw-medium text-decoration-none">Manage accounts</a>
+                </div>
+                <div class="card-panel-body">
+                    @foreach (var a in byAccount)
+                    {
+                        <div class="split-row">
+                            <span>@a.Name <span class="muted small">· @a.Count @(a.Count == 1 ? "expense" : "expenses")</span></span>
+                            <span class="num fw-semibold">@Display.Format(a.Amount)</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
 
     <div class="card-panel mb-4">
         <div class="card-panel-header">
@@ -169,8 +210,16 @@ else
     // Amount and Budget are in the display currency.
     private record CategoryTotal(string Name, string Color, decimal? Budget, decimal Amount);
 
+    // Amount is in the currency itself (what you actually paid in it).
+    private record CurrencyTotal(string Currency, decimal Amount, int Count);
+
+    // Amount is in the display currency.
+    private record AccountTotal(string Name, decimal Amount, int Count);
+
     private DateOnly month = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private List<CategoryTotal> rows = new();
+    private List<CurrencyTotal> byCurrency = new();
+    private List<AccountTotal> byAccount = new();
     private decimal total;
     private decimal? totalBudget;
     private int count;
@@ -195,6 +244,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // Add any recurring expenses that came due since the app was last opened.
+        await Recurring.RunOnceAsync();
         await LoadAsync();
         Display.Changed += OnDisplayCurrencyChanged;
     }
@@ -232,6 +283,25 @@ else
             .Select(r => r with { Budget = r.Budget is { } b ? Display.Budget(b) : null })
             .ToList();
         count = await db.Expenses.CountAsync(e => e.Date >= start && e.Date < end);
+
+        var inMonth = db.Expenses.Where(e => e.Date >= start && e.Date < end);
+        byCurrency = await inMonth
+            .GroupBy(e => e.Currency)
+            .OrderBy(g => g.Key)
+            .Select(g => new CurrencyTotal(g.Key, g.Sum(e => e.Amount), g.Count()))
+            .ToListAsync();
+
+        var accountNames = await db.Accounts.ToDictionaryAsync(a => a.Id, a => a.Name);
+        byAccount = (await inMonth
+            .GroupBy(e => e.AccountId)
+            .Select(g => new { AccountId = g.Key, Amount = g.Sum(e => secondary ? e.AmountInSecondary : e.AmountInHome), Count = g.Count() })
+            .ToListAsync())
+            .Select(g => new AccountTotal(
+                g.AccountId is { } id && accountNames.TryGetValue(id, out var name) ? name : "Not set",
+                g.Amount,
+                g.Count))
+            .OrderByDescending(a => a.Amount)
+            .ToList();
 
         total = rows.Sum(r => r.Amount);
         totalBudget = (await db.Settings.SingleAsync()).TotalMonthlyBudget is { } t ? Display.Budget(t) : null;

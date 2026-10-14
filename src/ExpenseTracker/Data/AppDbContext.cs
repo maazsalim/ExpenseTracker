@@ -9,6 +9,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
     public DbSet<AppSettings> Settings => Set<AppSettings>();
+    public DbSet<Account> Accounts => Set<Account>();
+    public DbSet<RecurringExpense> RecurringExpenses => Set<RecurringExpense>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -25,6 +27,37 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .WithMany(c => c.Expenses)
             .HasForeignKey(e => e.CategoryId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // Like categories, an account that has expenses can't be deleted.
+        b.Entity<Expense>()
+            .HasOne(e => e.Account)
+            .WithMany(a => a.Expenses)
+            .HasForeignKey(e => e.AccountId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Deleting a recurring item keeps the expenses it already created.
+        b.Entity<Expense>()
+            .HasOne(e => e.RecurringExpense)
+            .WithMany()
+            .HasForeignKey(e => e.RecurringExpenseId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // One entry per recurring item per day, so two tabs opening at once can't both create it.
+        b.Entity<Expense>().HasIndex(e => new { e.RecurringExpenseId, e.Date }).IsUnique();
+
+        b.Entity<Account>(a =>
+        {
+            a.Property(x => x.Currency).HasMaxLength(3);
+            a.HasIndex(x => x.Name).IsUnique();
+        });
+
+        b.Entity<RecurringExpense>(r =>
+        {
+            r.Property(x => x.Amount).HasPrecision(10, 2);
+            r.Property(x => x.Currency).HasMaxLength(3);
+            r.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
+            r.HasOne(x => x.Account).WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
+        });
 
         b.Entity<Category>().Property(c => c.MonthlyBudget).HasPrecision(10, 2);
         b.Entity<Category>().Property(c => c.Color).HasDefaultValue("indigo");

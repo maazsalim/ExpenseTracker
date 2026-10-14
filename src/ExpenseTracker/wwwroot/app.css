@@ -233,6 +233,53 @@ h1:focus {
     max-width: 260px;
 }
 
+/* Two cards side by side on wider screens (Summary: paid in / paid with). */
+.summary-split {
+    display: grid;
+    gap: 1rem;
+}
+
+@media (min-width: 768px) {
+    .summary-split {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.split-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.4rem 0;
+}
+
+    .split-row + .split-row {
+        border-top: 1px solid var(--border);
+    }
+
+    .split-row.split-total {
+        font-weight: 600;
+    }
+
+/* Marks an expense added by a recurring item. */
+.recurring-mark {
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-left: 0.25rem;
+}
+
+/* "Repeat every month" option on the expense form. */
+.recurring-option {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.9rem;
+}
+
+/* A paused recurring item. */
+.row-paused td {
+    opacity: 0.55;
+}
+
 /* An expense's amount in the display currency, shown under its original amount. */
 .amount-converted {
     display: block;
@@ -433,7 +480,8 @@ h1:focus {
 
 @media (min-width: 992px) {
     .two-col {
-        grid-template-columns: 340px 1fr;
+        /* minmax(0, …) lets the table column shrink and scroll instead of widening the page. */
+        grid-template-columns: 340px minmax(0, 1fr);
     }
 }
 

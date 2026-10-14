@@ -1,0 +1,252 @@
+@page "/accounts"
+@rendermode InteractiveServer
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject DisplayCurrency Display
+@implements IDisposable
+
+<PageTitle>Accounts · ExpenseTracker</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Accounts</h1>
+        <p>The bank accounts and cards you pay with.</p>
+    </div>
+    <div class="header-actions">
+        <CurrencySwitch />
+    </div>
+</div>
+
+@if (!loaded)
+{
+    <div class="card-panel loading">
+        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Loading accounts…
+    </div>
+}
+else
+{
+    <div class="two-col">
+        <div class="card-panel">
+            <div class="card-panel-header">
+                <h2 class="fs-6 fw-semibold mb-0">@(editingId is null ? "New account" : "Edit account")</h2>
+            </div>
+
+            <EditForm Model="form" OnValidSubmit="SaveAsync">
+                <DataAnnotationsValidator />
+
+                <div class="card-panel-body">
+                    <div class="mb-3">
+                        <label class="form-label" for="acc-name">Name</label>
+                        <InputText id="acc-name" class="form-control" placeholder="e.g. Emirates NBD current" @bind-Value="form.Name" />
+                        <ValidationMessage For="() => form.Name" />
+                        @if (nameError is not null)
+                        {
+                            <div class="validation-message">@nameError</div>
+                        }
+                    </div>
+
+                    <div>
+                        <label class="form-label" for="acc-currency">Account currency</label>
+                        <InputSelect id="acc-currency" class="form-select" @bind-Value="form.Currency">
+                            @foreach (var currency in Currencies.Supported)
+                            {
+                                <option value="@currency">@currency</option>
+                            }
+                        </InputSelect>
+                        <div class="form-text">The currency the account is held in. A CAD card can still pay for things in AED.</div>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    @if (editingId is not null)
+                    {
+                        <button type="button" class="btn btn-light" @onclick="ResetForm">Cancel</button>
+                    }
+                    <button type="submit" class="btn btn-primary" disabled="@saving">
+                        @(editingId is null ? "Add account" : "Save changes")
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+
+        <div class="card-panel">
+            @if (rows.Count == 0)
+            {
+                <div class="empty-state">
+                    <h2>No accounts yet</h2>
+                    <p class="mb-0">Add the accounts and cards you pay with.</p>
+                </div>
+            }
+            else
+            {
+                <div class="table-scroll">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Account</th>
+                                <th>Currency</th>
+                                <th class="num">This month (@Display.Current)</th>
+                                <th class="num">Expenses</th>
+                                <th><span class="visually-hidden">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in rows)
+                            {
+                                <tr>
+                                    <td class="fw-medium">@r.Account.Name</td>
+                                    <td class="muted">@r.Account.Currency</td>
+                                    <td class="num">@r.MonthSpent.ToString("N2")</td>
+                                    <td class="num muted">@r.ExpenseCount</td>
+                                    <td>
+                                        <div class="row-actions">
+                                            @if (pendingDeleteId == r.Account.Id)
+                                            {
+                                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteAsync(r)">Delete</button>
+                                                <button class="btn btn-sm btn-light" @onclick="() => pendingDeleteId = null">Cancel</button>
+                                            }
+                                            else
+                                            {
+                                                <button class="btn btn-icon" title="Edit" aria-label="Edit @r.Account.Name" @onclick="() => StartEdit(r.Account)">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                                                </button>
+                                                <button class="btn btn-icon danger" aria-label="Delete @r.Account.Name"
+                                                        title="@(r.InUse ? "Can't delete: account is used by expenses or recurring items" : "Delete")"
+                                                        disabled="@r.InUse" @onclick="() => pendingDeleteId = r.Account.Id">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private record AccountRow(Account Account, int ExpenseCount, bool UsedByRecurring, decimal MonthSpent)
+    {
+        public bool InUse => ExpenseCount > 0 || UsedByRecurring;
+    }
+
+    private List<AccountRow> rows = new();
+    private bool loaded;
+    private bool saving;
+
+    private Account form = new();
+    private int? editingId;
+    private string? nameError;
+    private int? pendingDeleteId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        ResetForm();
+        Display.Changed += OnDisplayCurrencyChanged;
+    }
+
+    private void OnDisplayCurrencyChanged() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Display.Changed -= OnDisplayCurrencyChanged;
+
+    private async Task LoadAsync()
+    {
+        var today = DateTime.Today;
+        var start = new DateOnly(today.Year, today.Month, 1);
+        var end = start.AddMonths(1);
+        var secondary = Display.ShowingSecondary;
+
+        using var db = await DbFactory.CreateDbContextAsync();
+        rows = await db.Accounts
+            .OrderBy(a => a.Name)
+            .Select(a => new AccountRow(
+                a,
+                a.Expenses.Count,
+                db.RecurringExpenses.Any(r => r.AccountId == a.Id),
+                a.Expenses.Where(e => e.Date >= start && e.Date < end)
+                    .Sum(e => secondary ? e.AmountInSecondary : e.AmountInHome)))
+            .ToListAsync();
+        loaded = true;
+    }
+
+    private void StartEdit(Account a)
+    {
+        editingId = a.Id;
+        form = new Account { Id = a.Id, Name = a.Name, Currency = a.Currency };
+        nameError = null;
+        pendingDeleteId = null;
+    }
+
+    private void ResetForm()
+    {
+        editingId = null;
+        form = new Account();
+        nameError = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        form.Name = form.Name.Trim();
+        if (rows.Any(r => r.Account.Id != editingId
+                          && string.Equals(r.Account.Name, form.Name, StringComparison.OrdinalIgnoreCase)))
+        {
+            nameError = "An account with this name already exists.";
+            return;
+        }
+
+        saving = true;
+        try
+        {
+            using var db = await DbFactory.CreateDbContextAsync();
+            if (editingId is null)
+            {
+                db.Accounts.Add(new Account { Name = form.Name, Currency = form.Currency });
+            }
+            else
+            {
+                var existing = await db.Accounts.FindAsync(editingId);
+                if (existing is not null)
+                {
+                    existing.Name = form.Name;
+                    existing.Currency = form.Currency;
+                }
+            }
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            nameError = "Couldn't save. An account with this name may already exist.";
+            return;
+        }
+        finally
+        {
+            saving = false;
+        }
+
+        await LoadAsync();
+        ResetForm();
+    }
+
+    private async Task DeleteAsync(AccountRow r)
+    {
+        pendingDeleteId = null;
+        if (r.InUse)
+            return;
+
+        using var db = await DbFactory.CreateDbContextAsync();
+        await db.Accounts
+            .Where(a => a.Id == r.Account.Id && !a.Expenses.Any() && !db.RecurringExpenses.Any(x => x.AccountId == a.Id))
+            .ExecuteDeleteAsync();
+        if (editingId == r.Account.Id)
+            ResetForm();
+        await LoadAsync();
+    }
+}

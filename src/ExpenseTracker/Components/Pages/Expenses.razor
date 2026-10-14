@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject DisplayCurrency Display
+@inject RecurringExpenseService Recurring
 @implements IDisposable
 
 <PageTitle>Expenses · ExpenseTracker</PageTitle>
@@ -91,13 +92,21 @@ else
                         <option value="@c.Id">@c.Name</option>
                     }
                 </select>
+                <select class="form-select w-auto" aria-label="Filter by account" @bind="accountFilter">
+                    <option value="@AllAccounts">All accounts</option>
+                    @foreach (var a in accounts)
+                    {
+                        <option value="@a.Id">@a.Name</option>
+                    }
+                    <option value="@NoAccount">Not set</option>
+                </select>
             </div>
 
             @if (Filtered.Count == 0)
             {
                 <div class="empty-state">
                     <h2>No matching expenses</h2>
-                    <p class="mb-0">Try a different search or category.</p>
+                    <p class="mb-0">Try a different search, category or account.</p>
                 </div>
             }
             else
@@ -118,7 +127,19 @@ else
                             {
                                 <tr>
                                     <td class="muted text-nowrap">@e.Date.ToString("dd MMM yyyy")</td>
-                                    <td class="fw-medium">@e.Description</td>
+                                    <td>
+                                        <div class="fw-medium">
+                                            @e.Description
+                                            @if (e.RecurringExpenseId is not null)
+                                            {
+                                                <span class="recurring-mark" title="Added by a recurring item">↻</span>
+                                            }
+                                        </div>
+                                        @if (e.Account is not null)
+                                        {
+                                            <div class="muted small">@e.Account.Name</div>
+                                        }
+                                    </td>
                                     <td><span class="cat-badge cat-@e.Category?.Color">@e.Category?.Name</span></td>
                                     <td class="num fw-semibold text-nowrap">
                                         @Money.Format(e.Amount, e.Currency)
@@ -167,10 +188,15 @@ else
 
     private List<Expense> expenses = new();
     private List<Category> categories = new();
+    private List<Account> accounts = new();
     private bool loaded;
+
+    private const int AllAccounts = 0;
+    private const int NoAccount = -1;
 
     private string search = "";
     private int categoryFilter;
+    private int accountFilter = AllAccounts;
     private int? pendingDeleteId;
 
     private decimal monthTotal;
@@ -187,16 +213,27 @@ else
 
     private List<Expense> Filtered => expenses
         .Where(e => categoryFilter == 0 || e.CategoryId == categoryFilter)
+        .Where(e => accountFilter switch
+        {
+            AllAccounts => true,
+            NoAccount => e.AccountId is null,
+            var id => e.AccountId == id,
+        })
         .Where(e => string.IsNullOrWhiteSpace(search)
                     || e.Description.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
         .ToList();
 
     protected override async Task OnInitializedAsync()
     {
+        // Add any recurring expenses that came due since the app was last opened.
+        await Recurring.RunOnceAsync();
+
         using var db = await DbFactory.CreateDbContextAsync();
         categories = await db.Categories.OrderBy(c => c.Name).ToListAsync();
+        accounts = await db.Accounts.OrderBy(a => a.Name).ToListAsync();
         expenses = await db.Expenses
             .Include(e => e.Category)
+            .Include(e => e.Account)
             .OrderByDescending(e => e.Date)
             .ThenByDescending(e => e.Id)
             .ToListAsync();

@@ -4,6 +4,7 @@
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject NavigationManager Nav
 @inject ExpenseConverter Converter
+@inject RecurringExpenseService RecurringService
 @inject IOptions<CurrencyOptions> CurrencyOptions
 
 <PageTitle>@Title · ExpenseTracker</PageTitle>
@@ -66,7 +67,7 @@
                     </div>
                 </div>
 
-                <div>
+                <div class="mb-3">
                     <div class="d-flex justify-content-between">
                         <label class="form-label" for="category">Category</label>
                         <a href="categories" class="small text-decoration-none">Manage categories</a>
@@ -79,6 +80,47 @@
                         }
                     </InputSelect>
                     <ValidationMessage For="() => expense.CategoryId" />
+                </div>
+
+                <div>
+                    <div class="d-flex justify-content-between">
+                        <label class="form-label" for="account">Paid with</label>
+                        <a href="accounts" class="small text-decoration-none">Manage accounts</a>
+                    </div>
+                    <InputSelect id="account" class="form-select" @bind-Value="expense.AccountId">
+                        <option value="">Not set</option>
+                        @foreach (var a in accounts)
+                        {
+                            <option value="@a.Id">@a.Name</option>
+                        }
+                    </InputSelect>
+                </div>
+
+                <div class="recurring-option">
+                    @if (expense.RecurringExpenseId is not null)
+                    {
+                        <span>↻ This expense repeats every month. <a href="recurring">Manage recurring items</a></span>
+                    }
+                    else
+                    {
+                        <div class="form-check">
+                            <input id="make-recurring" type="checkbox" class="form-check-input" @bind="makeRecurring" />
+                            <label class="form-check-label" for="make-recurring">
+                                Repeat every month on day @expense.Date.Day
+                            </label>
+                        </div>
+                        @if (makeRecurring)
+                        {
+                            <div class="form-text">
+                                Next one: @MonthlySchedule.Next(expense.Date, expense.Date.Day).ToString("d MMM yyyy").
+                                @if (MonthlySchedule.Next(expense.Date, expense.Date.Day) <= DateOnly.FromDateTime(DateTime.Today))
+                                {
+                                    <span>Months since then will be added too.</span>
+                                }
+                                You can change or pause it on the Recurring page.
+                            </div>
+                        }
+                    }
                 </div>
             </div>
 
@@ -106,9 +148,11 @@
 
     private Expense? expense;
     private List<Category> categories = new();
+    private List<Account> accounts = new();
     private bool loaded;
     private bool saving;
     private string? error;
+    private bool makeRecurring;
 
     // What the stored conversion was based on, so an edit only re-fetches the rate when needed.
     private string? originalCurrency;
@@ -120,8 +164,15 @@
     {
         using var db = await DbFactory.CreateDbContextAsync();
         categories = await db.Categories.OrderBy(c => c.Name).ToListAsync();
+        accounts = await db.Accounts.OrderBy(a => a.Name).ToListAsync();
+        var defaultCurrency = CurrencyOptions.Value.DefaultExpenseCurrency;
         expense = Id is null
-            ? new Expense { Currency = CurrencyOptions.Value.DefaultExpenseCurrency }
+            ? new Expense
+            {
+                Currency = defaultCurrency,
+                // Start with an account in the same currency, if there's one.
+                AccountId = accounts.FirstOrDefault(a => a.Currency == defaultCurrency)?.Id,
+            }
             : await db.Expenses.FindAsync(Id);
         originalCurrency = expense?.Currency;
         originalDate = expense?.Date ?? default;
@@ -151,12 +202,32 @@
             ExpenseConverter.ApplyRates(expense!);
         }
 
-        using var db = await DbFactory.CreateDbContextAsync();
-        if (Id is null)
-            db.Expenses.Add(expense!);
-        else
-            db.Expenses.Update(expense!);
-        await db.SaveChangesAsync();
+        // Saved together with the expense, which becomes the item's first entry.
+        if (makeRecurring && expense!.RecurringExpenseId is null)
+            expense.RecurringExpense = RecurringExpenseService.FromExpense(expense);
+
+        using (var db = await DbFactory.CreateDbContextAsync())
+        {
+            if (Id is null)
+                db.Expenses.Add(expense!);
+            else
+                db.Expenses.Update(expense!);
+            await db.SaveChangesAsync();
+        }
+
+        // An older expense may already have later months due.
+        if (makeRecurring)
+        {
+            try
+            {
+                await RecurringService.CreateDueAsync();
+            }
+            catch (Exception)
+            {
+                // They'll be added next time the app is opened.
+            }
+        }
+
         Nav.NavigateTo("");
     }
 }
