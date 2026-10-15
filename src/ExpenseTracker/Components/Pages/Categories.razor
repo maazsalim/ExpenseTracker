@@ -224,7 +224,7 @@ else
                 db.RecurringExpenses.Any(r => r.CategoryId == c.Id),
                 c.Expenses.Where(e => e.Date >= start && e.Date < end).Sum(e => e.AmountInHome)))
             .ToListAsync();
-        totalBudget = (await db.Settings.SingleAsync()).TotalMonthlyBudget;
+        totalBudget = (await db.Settings.SingleOrDefaultAsync())?.TotalMonthlyBudget;
         totalBudgetInput = totalBudget;
         loaded = true;
     }
@@ -246,7 +246,12 @@ else
         savingTotal = true;
         totalBudgetError = null;
         using var db = await DbFactory.CreateDbContextAsync();
-        await db.Settings.ExecuteUpdateAsync(s => s.SetProperty(x => x.TotalMonthlyBudget, value));
+        // Each user has at most one settings row, created the first time it's saved.
+        var settings = await db.Settings.SingleOrDefaultAsync();
+        if (settings is null)
+            db.Settings.Add(settings = new AppSettings());
+        settings.TotalMonthlyBudget = value;
+        await db.SaveChangesAsync();
         totalBudget = totalBudgetInput = value;
         savingTotal = false;
     }

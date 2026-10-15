@@ -3,9 +3,11 @@ using System.ComponentModel.DataAnnotations;
 namespace ExpenseTracker.Models;
 
 /// <summary>A bank account or card an expense was paid with.</summary>
-public class Account
+public class Account : IUserOwned
 {
     public int Id { get; set; }
+
+    public string? UserId { get; set; }
 
     [Required, StringLength(50)]
     public string Name { get; set; } = "";

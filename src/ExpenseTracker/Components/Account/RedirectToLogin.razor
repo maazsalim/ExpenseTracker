@@ -1,0 +1,7 @@
+@* Sends someone who isn't signed in to the login page, coming back here afterwards. *@
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized() =>
+        Nav.NavigateTo($"login?returnUrl={Uri.EscapeDataString(Nav.ToBaseRelativePath(Nav.Uri))}", forceLoad: true);
+}

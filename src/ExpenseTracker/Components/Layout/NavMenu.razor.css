@@ -94,6 +94,22 @@
     flex-shrink: 0;
 }
 
+.nav-user {
+    color: #cbd5e1;
+    font-size: 0.85rem;
+    padding: 0 0.75rem 0.25rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sign-out {
+    width: 100%;
+    border: 0;
+    background: none;
+    text-align: left;
+}
+
 .nav-scrollable {
     display: none;
 }

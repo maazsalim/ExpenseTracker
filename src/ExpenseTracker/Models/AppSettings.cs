@@ -2,12 +2,12 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ExpenseTracker.Models;
 
-/// <summary>App-wide settings, stored as a single row (<see cref="SingletonId"/>).</summary>
-public class AppSettings
+/// <summary>A user's settings: at most one row per user, created when first saved.</summary>
+public class AppSettings : IUserOwned
 {
-    public const int SingletonId = 1;
+    public int Id { get; set; }
 
-    public int Id { get; set; } = SingletonId;
+    public string? UserId { get; set; }
 
     /// <summary>A budget for all spending in a month, in the home currency, regardless of category.</summary>
     [Range(0.01, 10_000_000, ErrorMessage = "Budget must be greater than 0")]

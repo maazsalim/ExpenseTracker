@@ -304,7 +304,7 @@ else
             .ToList();
 
         total = rows.Sum(r => r.Amount);
-        totalBudget = (await db.Settings.SingleAsync()).TotalMonthlyBudget is { } t ? Display.Budget(t) : null;
+        totalBudget = (await db.Settings.SingleOrDefaultAsync())?.TotalMonthlyBudget is { } t ? Display.Budget(t) : null;
         loaded = true;
     }
 

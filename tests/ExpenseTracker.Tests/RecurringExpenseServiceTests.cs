@@ -13,12 +13,16 @@ public class RecurringExpenseServiceTests
     // "Today" is 14 Oct 2026.
     private static readonly DateOnly Today = new(2026, 10, 14);
 
-    private readonly TestDbFactory dbFactory = new();
+    private const string Me = "user-me";
+
+    private readonly TestDb testDb = new();
+    private readonly IDbContextFactory<AppDbContext> dbFactory;
     private readonly FakeFx fx = new();
     private readonly RecurringExpenseService service;
 
     public RecurringExpenseServiceTests()
     {
+        dbFactory = testDb.FactoryFor(Me);
         var clock = new FakeTimeProvider(new DateTimeOffset(Today.ToDateTime(new TimeOnly(9, 0)), TimeSpan.Zero));
         clock.SetLocalTimeZone(TimeZoneInfo.Utc);
         var converter = new ExpenseConverter(fx,
@@ -170,14 +174,5 @@ public class RecurringExpenseServiceTests
                 throw new ExchangeRateUnavailableException("offline");
             return Task.FromResult(new FxQuote(0.388m, date, "test"));
         }
-    }
-
-    private class TestDbFactory : IDbContextFactory<AppDbContext>
-    {
-        private readonly DbContextOptions<AppDbContext> options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        public AppDbContext CreateDbContext() => new(options);
     }
 }

@@ -2,12 +2,14 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ExpenseTracker.Models;
 
-public class Category
+public class Category : IUserOwned
 {
     public static readonly string[] Colors =
         ["indigo", "emerald", "orange", "pink", "sky", "amber", "violet", "teal", "rose", "slate"];
 
     public int Id { get; set; }
+
+    public string? UserId { get; set; }
 
     [Required, StringLength(50)]
     public string Name { get; set; } = "";

@@ -6,9 +6,11 @@ namespace ExpenseTracker.Models;
 /// An expense that repeats monthly (rent, subscriptions). Due entries are created when the
 /// app is opened, catching up on any missed months.
 /// </summary>
-public class RecurringExpense
+public class RecurringExpense : IUserOwned
 {
     public int Id { get; set; }
+
+    public string? UserId { get; set; }
 
     [Required, StringLength(100)]
     public string Description { get; set; } = "";

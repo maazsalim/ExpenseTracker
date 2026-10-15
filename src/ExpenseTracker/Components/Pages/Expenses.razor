@@ -237,7 +237,7 @@ else
             .OrderByDescending(e => e.Date)
             .ThenByDescending(e => e.Id)
             .ToListAsync();
-        totalBudget = (await db.Settings.SingleAsync()).TotalMonthlyBudget;
+        totalBudget = (await db.Settings.SingleOrDefaultAsync())?.TotalMonthlyBudget;
         ComputeStats();
         Display.Changed += OnDisplayCurrencyChanged;
         loaded = true;

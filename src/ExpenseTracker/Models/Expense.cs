@@ -2,9 +2,11 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ExpenseTracker.Models;
 
-public class Expense
+public class Expense : IUserOwned
 {
     public int Id { get; set; }
+
+    public string? UserId { get; set; }
 
     [Required, StringLength(100)]
     public string Description { get; set; } = "";
