@@ -16,6 +16,9 @@ public class ExchangeRateService(
     // Enough precision for a rate; matches the numeric(18,8) columns.
     private const int RateDecimals = 8;
 
+    // How old a saved rate may be when the rate service can't be reached.
+    private const int MaxFallbackAgeDays = 7;
+
     public async Task<FxQuote> GetRateAsync(string from, string to, DateOnly date, CancellationToken ct = default)
     {
         if (from == to)
@@ -61,6 +64,16 @@ public class ExchangeRateService(
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
+            // The rate service is down or slow: use the most recent rate already saved, if it's
+            // at most a week old. Its RateDate records which day's rate was actually used.
+            var recent = await db.ExchangeRates
+                .Where(r => r.Base == Currencies.USD && r.Quote == currency
+                            && r.Date <= date && r.Date >= date.AddDays(-MaxFallbackAgeDays))
+                .OrderByDescending(r => r.Date)
+                .FirstOrDefaultAsync(ct);
+            if (recent is not null)
+                return (recent.Rate, recent.RateDate, recent.Source);
+
             throw new ExchangeRateUnavailableException($"Couldn't get the {currency} rate for {date:d MMM yyyy}.", ex);
         }
 

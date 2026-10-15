@@ -19,16 +19,17 @@
 @code {
     private const string StorageKey = "displayCurrency";
 
-    protected override async Task OnInitializedAsync()
-    {
-        Display.Changed += OnChanged;
-        await Display.InitializeAsync();
-    }
+    protected override void OnInitialized() => Display.Changed += OnChanged;
 
+    // Runs once the page is live, so a slow rate service never holds up showing the page.
+    // The AED button is enabled as soon as today's rate is known.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender)
             return;
+
+        await Display.InitializeAsync();
+        StateHasChanged();
 
         try
         {

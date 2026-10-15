@@ -239,7 +239,7 @@ h1:focus {
     min-height: 100vh;
     display: grid;
     place-items: center;
-    padding: 1.5rem 1rem;
+    padding: calc(1.5rem + env(safe-area-inset-top)) 1rem calc(1.5rem + env(safe-area-inset-bottom));
 }
 
 .auth-card {
@@ -647,6 +647,178 @@ h1:focus {
     gap: 0.6rem;
     padding: 3rem;
     color: var(--text-muted);
+}
+
+/* ---------- Floating "add" button (phones) ---------- */
+
+.fab {
+    display: none;
+}
+
+/* ---------- Phones ---------- */
+
+@media (max-width: 640px) {
+    /* iOS zooms in on any field with text smaller than 16px; keep them at 16px. */
+    .form-control, .form-select, .input-group-text {
+        font-size: 16px;
+    }
+
+    /* Comfortable tap targets (about 44px, Apple's guideline). */
+    .btn {
+        min-height: 44px;
+    }
+
+    .btn-icon {
+        width: 44px;
+        height: 44px;
+    }
+
+    .btn-sm {
+        min-height: 36px;
+    }
+
+    .currency-switch button {
+        min-height: 36px;
+        padding: 0.35rem 1rem;
+    }
+
+    /* The header's "Add expense" button is replaced by the floating one. */
+    .page-header .btn-primary[href="expenses/new"] {
+        display: none;
+    }
+
+    .page-header h1 {
+        font-size: 1.6rem;
+    }
+
+    /* Summary cards two-by-two instead of one per row. */
+    .stat-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .stat-card {
+        padding: 0.9rem;
+    }
+
+    .stat-value {
+        font-size: 1.15rem;
+        overflow-wrap: anywhere;
+    }
+
+    /* Filters: search on its own line, the two dropdowns side by side. */
+    .card-panel-header .input-icon {
+        flex-basis: 100%;
+        max-width: none !important;
+    }
+
+    .card-panel-header .form-select {
+        flex: 1 1 0;
+        min-width: 0;
+        width: auto !important;
+    }
+
+    /* Expense list: each row becomes a compact card.
+         Description (+ account)    Amount
+         Date · Category            Edit / Delete */
+    .expense-table thead {
+        display: none;
+    }
+
+    /* Plain blocks instead of table layout, so each row can be a grid of its own. */
+    .expense-table,
+    .expense-table tbody,
+    .expense-table tfoot {
+        display: block;
+        width: 100%;
+    }
+
+    .expense-table tr {
+        display: grid;
+        grid-template-columns: auto auto minmax(0, 1fr) auto;
+        grid-template-areas:
+            "desc desc desc amount"
+            "date cat  .    actions";
+        column-gap: 0.75rem;
+        row-gap: 0.15rem;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .expense-table tbody tr:last-child {
+        border-bottom: none;
+    }
+
+    .expense-table td {
+        display: block;
+        padding: 0;
+        border: none;
+    }
+
+    .expense-table .col-desc {
+        grid-area: desc;
+    }
+
+    .expense-table .col-amount {
+        grid-area: amount;
+    }
+
+    .expense-table .col-date {
+        grid-area: date;
+        font-size: 0.8rem;
+    }
+
+    .expense-table .col-cat {
+        grid-area: cat;
+        font-size: 0.8rem;
+    }
+
+    .expense-table .col-actions {
+        grid-area: actions;
+    }
+
+    .expense-table tfoot tr {
+        grid-template-areas: "desc desc desc amount";
+        background: var(--surface-muted);
+        border-top: 1px solid var(--border);
+        font-weight: 600;
+    }
+
+    .expense-table tfoot td {
+        border: none;
+        background: none;
+    }
+
+    .expense-table tfoot .col-actions {
+        display: none;
+    }
+
+    /* Floating "add expense" button, bottom right, clear of the home bar. */
+    .fab {
+        display: grid;
+        place-items: center;
+        position: fixed;
+        right: calc(1.25rem + env(safe-area-inset-right));
+        bottom: calc(1.25rem + env(safe-area-inset-bottom));
+        width: 58px;
+        height: 58px;
+        border-radius: 50%;
+        background: var(--brand-600);
+        color: #fff;
+        box-shadow: 0 6px 16px rgba(79, 70, 229, 0.45);
+        z-index: 1000;
+    }
+
+        .fab svg {
+            width: 26px;
+            height: 26px;
+        }
+
+        .fab:active {
+            transform: scale(0.95);
+        }
 }
 
 /* ---------- Framework ---------- */

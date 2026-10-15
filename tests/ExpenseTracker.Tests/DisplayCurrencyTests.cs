@@ -1,5 +1,6 @@
 using ExpenseTracker.Models;
 using ExpenseTracker.Services;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -12,7 +13,7 @@ public class DisplayCurrencyTests
     private DisplayCurrency Create()
     {
         var options = Options.Create(new CurrencyOptions { HomeCurrency = Currencies.CAD, SecondaryCurrency = Currencies.AED });
-        var rate = new SecondaryCurrencyRate(fx, options, TimeProvider.System, NullLogger<SecondaryCurrencyRate>.Instance);
+        var rate = new SecondaryCurrencyRate(fx, options, new MemoryCache(new MemoryCacheOptions()), TimeProvider.System, NullLogger<SecondaryCurrencyRate>.Instance);
         return new DisplayCurrency(rate, options);
     }
 

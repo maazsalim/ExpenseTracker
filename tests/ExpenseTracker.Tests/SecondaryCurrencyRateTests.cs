@@ -1,5 +1,6 @@
 using ExpenseTracker.Models;
 using ExpenseTracker.Services;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -9,11 +10,36 @@ public class SecondaryCurrencyRateTests
 {
     private readonly FakeFx fx = new();
 
+    // Shared by every instance, like the app-wide cache in the real app.
+    private readonly MemoryCache cache = new(new MemoryCacheOptions());
+
     private SecondaryCurrencyRate Create(string secondary = Currencies.AED) => new(
         fx,
         Options.Create(new CurrencyOptions { HomeCurrency = Currencies.CAD, SecondaryCurrency = secondary }),
+        cache,
         TimeProvider.System,
         NullLogger<SecondaryCurrencyRate>.Instance);
+
+    [Fact]
+    public async Task OtherTabs_ReuseTheSameRate()
+    {
+        await Create().GetAsync();
+        var otherTab = await Create().GetAsync();
+
+        Assert.Equal(2.5815m, otherTab!.Rate);
+        Assert.Equal(1, fx.Calls);
+    }
+
+    [Fact]
+    public async Task AFailure_IsNotRetriedStraightAway()
+    {
+        fx.Fail = true;
+        await Create().GetAsync();
+
+        fx.Fail = false;
+        Assert.Null(await Create().GetAsync()); // still within the 5-minute wait
+        Assert.Equal(1, fx.Calls);
+    }
 
     [Fact]
     public async Task FetchesTheRateOnce_AndReusesIt()

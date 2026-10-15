@@ -48,10 +48,12 @@ builder.Services.AddDataProtection()
 
 builder.Services.Configure<CurrencyOptions>(builder.Configuration.GetSection(CurrencyOptions.Section));
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddMemoryCache(); // today's rate, shared app-wide (SecondaryCurrencyRate)
 builder.Services.AddHttpClient<IUsdRateSource, FrankfurterRateSource>(http =>
 {
     http.BaseAddress = new Uri("https://api.frankfurter.dev/");
-    http.Timeout = TimeSpan.FromSeconds(10);
+    // Don't keep the user waiting long; ExchangeRateService falls back to a recent saved rate.
+    http.Timeout = TimeSpan.FromSeconds(6);
 });
 builder.Services.AddScoped<IExchangeRateService, ExchangeRateService>();
 builder.Services.AddScoped<ExpenseConverter>();

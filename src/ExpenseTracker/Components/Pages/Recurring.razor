@@ -4,7 +4,7 @@
 @inject RecurringExpenseService RecurringService
 @inject IOptions<CurrencyOptions> CurrencyOptions
 
-<PageTitle>Recurring · ExpenseTracker</PageTitle>
+<PageTitle>Recurring · Dual Expense Tracker</PageTitle>
 
 <div class="page-header">
     <div>
@@ -45,7 +45,7 @@ else
                     <div class="mb-3">
                         <label class="form-label" for="rec-amount">Amount</label>
                         <div class="input-group">
-                            <InputNumber id="rec-amount" class="form-control" step="0.01" @bind-Value="form.Amount" />
+                            <InputNumber id="rec-amount" class="form-control" step="0.01" inputmode="decimal" @bind-Value="form.Amount" />
                             <InputSelect class="form-select currency-select" aria-label="Currency" @bind-Value="form.Currency">
                                 @foreach (var currency in Currencies.Supported)
                                 {
@@ -82,7 +82,7 @@ else
                     <div class="row g-3">
                         <div class="col-6">
                             <label class="form-label" for="rec-day">Day of month</label>
-                            <InputNumber id="rec-day" class="form-control" min="1" max="31" @bind-Value="form.DayOfMonth" />
+                            <InputNumber id="rec-day" class="form-control" min="1" max="31" inputmode="numeric" @bind-Value="form.DayOfMonth" />
                             <ValidationMessage For="() => form.DayOfMonth" />
                         </div>
                         <div class="col-6">

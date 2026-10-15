@@ -128,6 +128,30 @@ public class ExchangeRateServiceTests
             () => service.GetRateAsync("AED", "CAD", Friday));
     }
 
+    [Fact]
+    public async Task ApiFailure_FallsBackToARecentSavedRate_WithItsRealDate()
+    {
+        await service.GetRateAsync("USD", "CAD", Friday); // saves Friday's rate
+        source.Fail = true;
+
+        var quote = await service.GetRateAsync("USD", "CAD", Today);
+
+        Assert.Equal(CadPerUsd, quote.Rate);
+        Assert.Equal(Friday, quote.RateDate);
+    }
+
+    [Fact]
+    public async Task ApiFailure_DoesntUseASavedRateOlderThanAWeek()
+    {
+        var eightDaysEarlier = Friday.AddDays(-8);
+        source.Rates[(Currencies.CAD, eightDaysEarlier)] = new UsdRate(1.40m, eightDaysEarlier);
+        await service.GetRateAsync("USD", "CAD", eightDaysEarlier); // saves that day's rate
+        source.Fail = true;
+
+        await Assert.ThrowsAsync<ExchangeRateUnavailableException>(
+            () => service.GetRateAsync("USD", "CAD", Friday));
+    }
+
     private class FakeRateSource : IUsdRateSource
     {
         public Dictionary<(string, DateOnly), UsdRate> Rates { get; } = new();

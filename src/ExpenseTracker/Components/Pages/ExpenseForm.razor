@@ -7,7 +7,7 @@
 @inject RecurringExpenseService RecurringService
 @inject IOptions<CurrencyOptions> CurrencyOptions
 
-<PageTitle>@Title · ExpenseTracker</PageTitle>
+<PageTitle>@Title · Dual Expense Tracker</PageTitle>
 
 <div class="page-header">
     <div>
@@ -51,7 +51,7 @@
                     <div class="col-sm-6">
                         <label class="form-label" for="amount">Amount</label>
                         <div class="input-group">
-                            <InputNumber id="amount" class="form-control" step="0.01" @bind-Value="expense.Amount" />
+                            <InputNumber id="amount" class="form-control" step="0.01" inputmode="decimal" placeholder="0.00" @bind-Value="AmountInput" />
                             <InputSelect class="form-select currency-select" aria-label="Currency" @bind-Value="expense.Currency">
                                 @foreach (var currency in Currencies.Supported)
                                 {
@@ -159,6 +159,13 @@
     private DateOnly originalDate;
 
     private string Title => Id is null ? "Add expense" : "Edit expense";
+
+    // Shows an empty box instead of "0" for a new expense, so there's nothing to delete on a phone.
+    private decimal? AmountInput
+    {
+        get => expense!.Amount == 0 ? null : expense.Amount;
+        set => expense!.Amount = value ?? 0;
+    }
 
     protected override async Task OnInitializedAsync()
     {

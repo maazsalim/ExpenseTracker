@@ -1,8 +1,12 @@
+/* env(safe-area-inset-*) keeps content clear of the iPhone notch and home bar when the app is
+   installed and full screen (they're 0 in a normal browser). */
 .page {
     position: relative;
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
 }
 
 main {
@@ -13,12 +17,14 @@ main {
 .sidebar {
     background: var(--sidebar-bg);
     border-right: 1px solid rgba(255, 255, 255, 0.06);
+    /* The dark bar extends under the status bar. */
+    padding-top: env(safe-area-inset-top);
 }
 
 .content {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 1.5rem 1rem 3rem;
+    padding: 1.5rem 1rem calc(5rem + env(safe-area-inset-bottom));
 }
 
 @media (min-width: 641px) {
