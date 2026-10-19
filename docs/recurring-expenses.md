@@ -54,6 +54,28 @@ The "Repeat every month on day N" checkbox on the expense form reuses everything
 
 Once an expense is recurring, its form shows "↻ This expense repeats every month" with a link to the Recurring page.
 
+## Pending amounts
+
+Totals show what's actually been **spent** (expenses dated today or earlier), plus a smaller line for what's **pending** this month:
+
+- **Recurring items** whose due date hasn't been added yet: later this month, or overdue but not added (for example, when no rate was available).
+- **Expenses dated after today**, such as a bill entered in advance. They're marked "upcoming" in the list.
+
+For example, under This month: *"+ CAD 2,016.83 pending → CAD 2,126.65"*, and under a budget: *"CAD 873.35 left after pending"*. Budget and category bars show pending as a lighter, striped extension.
+
+Recurring items haven't been converted yet, so their pending amount in the other currency is an **estimate** using the latest rate already saved in the database (`GetLatestSavedRateAsync`). This doesn't call the rate service, so pages never wait for it. Once the item is added on its due date, it gets that day's real rate like any expense.
+
+| Shown on | Spent | Pending line |
+|---|---|---|
+| Expenses: This month | ✓ | ✓ |
+| Expenses: Budget remaining | ✓ | "left/over after pending" + striped bar |
+| Expenses: All time | ✓ | ✓ |
+| Summary: Total spent | ✓ | ✓ |
+| Summary: Budget bars | ✓ | "% after pending" + striped bar |
+| Summary: Spending by category | ✓ | "+ … pending" + striped bar |
+
+Files: [`Services/PendingExpenseService.cs`](../src/ExpenseTracker/Services/PendingExpenseService.cs), [`Components/PendingSegment.razor`](../src/ExpenseTracker/Components/PendingSegment.razor), [`Components/PendingAfter.razor`](../src/ExpenseTracker/Components/PendingAfter.razor). Tests: [`PendingExpenseServiceTests.cs`](../tests/ExpenseTracker.Tests/PendingExpenseServiceTests.cs).
+
 ## The flow
 
 ```

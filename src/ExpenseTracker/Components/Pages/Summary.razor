@@ -3,6 +3,7 @@
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject DisplayCurrency Display
 @inject RecurringExpenseService Recurring
+@inject PendingExpenseService Pending
 @implements IDisposable
 
 <PageTitle>Summary · Dual Expense Tracker</PageTitle>
@@ -39,6 +40,10 @@ else
             <div class="stat-label">Total spent</div>
             <div class="stat-value">@Display.Format(total)</div>
             <div class="stat-sub">@count @(count == 1 ? "expense" : "expenses")</div>
+            @if (totalPending > 0)
+            {
+                <div class="stat-pending" title="@PendingHint">+ @Display.Format(totalPending) pending → @Display.Format(total + totalPending)</div>
+            }
         </div>
         <div class="card-panel stat-card">
             <div class="stat-label">Daily average</div>
@@ -47,8 +52,8 @@ else
         </div>
         <div class="card-panel stat-card">
             <div class="stat-label">Top category</div>
-            <div class="stat-value">@(Spending.FirstOrDefault()?.Name ?? "—")</div>
-            <div class="stat-sub">@(Spending.Count == 0 ? "No spending" : $"{Percent(Spending[0])}% of total")</div>
+            <div class="stat-value">@(TopSpent?.Name ?? "—")</div>
+            <div class="stat-sub">@(TopSpent is null ? "No spending" : $"{Percent(TopSpent)}% of total")</div>
         </div>
     </div>
 
@@ -122,9 +127,10 @@ else
                         </div>
                         <div class="breakdown-track">
                             <div class="breakdown-bar @(overallLeft < 0 ? "bar-over" : "bar-indigo")" style="width: @Percent(total, overall)%"></div>
+                            <PendingSegment Spent="total" Pending="totalPending" Of="overall" />
                         </div>
                         <div class="budget-meta">
-                            <span class="muted">@((int)Math.Round(total / overall * 100))% used</span>
+                            <span class="muted">@UsedText(total, totalPending, overall)</span>
                             @if (overallLeft < 0)
                             {
                                 <span class="text-over">@Display.Format(-overallLeft) over</span>
@@ -134,6 +140,7 @@ else
                                 <span class="muted">@Display.Format(overallLeft) left</span>
                             }
                         </div>
+                        <PendingAfter Left="overallLeft" Pending="totalPending" Hint="@PendingHint" />
                     </div>
                 }
                 @foreach (var r in Budgeted)
@@ -150,9 +157,10 @@ else
                         </div>
                         <div class="breakdown-track">
                             <div class="breakdown-bar @(remaining < 0 ? "bar-over" : $"bar-{r.Color}")" style="width: @BudgetPercent(r)%"></div>
+                            <PendingSegment Spent="r.Amount" Pending="r.Pending" Of="budget" />
                         </div>
                         <div class="budget-meta">
-                            <span class="muted">@((int)Math.Round(r.Amount / budget * 100))% used</span>
+                            <span class="muted">@UsedText(r.Amount, r.Pending, budget)</span>
                             @if (remaining < 0)
                             {
                                 <span class="text-over">@Display.Format(-remaining) over</span>
@@ -162,6 +170,7 @@ else
                                 <span class="muted">@Display.Format(remaining) left</span>
                             }
                         </div>
+                        <PendingAfter Left="remaining" Pending="r.Pending" Hint="@PendingHint" />
                     </div>
                 }
             </div>
@@ -191,10 +200,16 @@ else
                             <span class="num">
                                 <span class="fw-semibold">@Display.Format(r.Amount)</span>
                                 <span class="muted ms-2">@Percent(r)%</span>
+                                @if (r.Pending > 0)
+                                {
+                                    <span class="amount-converted" title="@PendingHint">+ @Display.Format(r.Pending) pending</span>
+                                }
                             </span>
                         </div>
+                        @* With pending amounts, bars are scaled to spent + pending so both fit. *@
                         <div class="breakdown-track">
-                            <div class="breakdown-bar bar-@r.Color" style="width: @Percent(r)%"></div>
+                            <div class="breakdown-bar bar-@r.Color" style="width: @Percent(r.Amount, total + totalPending)%"></div>
+                            <PendingSegment Spent="r.Amount" Pending="r.Pending" Of="total + totalPending" Neutral />
                         </div>
                     </div>
                 }
@@ -207,8 +222,16 @@ else
     // Budgets are set in CAD, so in AED they're converted at today's rate (approximate).
     private string BudgetText(decimal budget) => (Display.ShowingSecondary ? "≈ " : "") + budget.ToString("N2");
 
-    // Amount and Budget are in the display currency.
-    private record CategoryTotal(string Name, string Color, decimal? Budget, decimal Amount);
+    // Amount (spent), Pending and Budget are in the display currency.
+    private record CategoryTotal(int Id, string Name, string Color, decimal? Budget, decimal Amount, decimal Pending = 0);
+
+    private const string PendingHint =
+        "Recurring items still due this month and expenses dated after today. " +
+        "Recurring amounts in the other currency are estimates at the latest saved rate.";
+
+    private string UsedText(decimal spent, decimal pending, decimal budget) =>
+        $"{(int)Math.Round(spent / budget * 100)}% used"
+        + (pending > 0 ? $" · {(int)Math.Round((spent + pending) / budget * 100)}% after pending" : "");
 
     // Amount is in the currency itself (what you actually paid in it).
     private record CurrencyTotal(string Currency, decimal Amount, int Count);
@@ -221,11 +244,18 @@ else
     private List<CurrencyTotal> byCurrency = new();
     private List<AccountTotal> byAccount = new();
     private decimal total;
+    private decimal totalPending;
     private decimal? totalBudget;
     private int count;
     private bool loaded;
 
-    private List<CategoryTotal> Spending => rows.Where(r => r.Amount > 0).OrderByDescending(r => r.Amount).ToList();
+    // Top category counts what's actually been spent, not pending amounts.
+    private CategoryTotal? TopSpent => rows.Where(r => r.Amount > 0).MaxBy(r => r.Amount);
+
+    private List<CategoryTotal> Spending => rows
+        .Where(r => r.Amount > 0 || r.Pending > 0)
+        .OrderByDescending(r => r.Amount + r.Pending)
+        .ToList();
     private List<CategoryTotal> Budgeted => rows.Where(r => r.Budget is not null).OrderBy(r => r.Name).ToList();
 
     // For the current month only count days elapsed so far; past months use the full month.
@@ -268,23 +298,36 @@ else
     {
         var start = month;
         var end = month.AddMonths(1);
+        // Spent = dated today or earlier; anything later in the month is pending.
+        var today = Pending.Today;
 
         var secondary = Display.ShowingSecondary;
+
+        // Pending in this month, by category (recurring items not added yet + later-dated expenses).
+        var pendingByCategory = (await Pending.BetweenAsync(start, end.AddDays(-1)))
+            .GroupBy(p => p.CategoryId)
+            .ToDictionary(g => g.Key, g => g.Sum(Display.Of));
 
         using var db = await DbFactory.CreateDbContextAsync();
         rows = (await db.Categories
             .Select(c => new CategoryTotal(
+                c.Id,
                 c.Name,
                 c.Color,
                 c.MonthlyBudget,
-                c.Expenses.Where(e => e.Date >= start && e.Date < end)
-                    .Sum(e => secondary ? e.AmountInSecondary : e.AmountInHome)))
+                c.Expenses.Where(e => e.Date >= start && e.Date < end && e.Date <= today)
+                    .Sum(e => secondary ? e.AmountInSecondary : e.AmountInHome),
+                0m))
             .ToListAsync())
-            .Select(r => r with { Budget = r.Budget is { } b ? Display.Budget(b) : null })
+            .Select(r => r with
+            {
+                Budget = r.Budget is { } b ? Display.Budget(b) : null,
+                Pending = pendingByCategory.GetValueOrDefault(r.Id),
+            })
             .ToList();
-        count = await db.Expenses.CountAsync(e => e.Date >= start && e.Date < end);
+        count = await db.Expenses.CountAsync(e => e.Date >= start && e.Date < end && e.Date <= today);
 
-        var inMonth = db.Expenses.Where(e => e.Date >= start && e.Date < end);
+        var inMonth = db.Expenses.Where(e => e.Date >= start && e.Date < end && e.Date <= today);
         byCurrency = await inMonth
             .GroupBy(e => e.Currency)
             .OrderBy(g => g.Key)
@@ -304,6 +347,7 @@ else
             .ToList();
 
         total = rows.Sum(r => r.Amount);
+        totalPending = rows.Sum(r => r.Pending);
         totalBudget = (await db.Settings.SingleOrDefaultAsync())?.TotalMonthlyBudget is { } t ? Display.Budget(t) : null;
         loaded = true;
     }

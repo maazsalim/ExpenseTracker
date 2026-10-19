@@ -40,6 +40,37 @@ public class ExchangeRateService(
         return new FxQuote(rate, rateDate, string.Join("+", sources));
     }
 
+    public async Task<FxQuote?> GetLatestSavedRateAsync(string from, string to, CancellationToken ct = default)
+    {
+        var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+        if (from == to)
+            return new FxQuote(1m, today, "same-currency");
+
+        using var db = await dbFactory.CreateDbContextAsync(ct);
+
+        async Task<(decimal Rate, DateOnly RateDate)?> LatestPerUsd(string currency)
+        {
+            switch (currency)
+            {
+                case Currencies.USD:
+                    return (1m, today);
+                case Currencies.AED:
+                    return (Currencies.AedPerUsd, today);
+            }
+            var row = await db.ExchangeRates
+                .Where(r => r.Base == Currencies.USD && r.Quote == currency)
+                .OrderByDescending(r => r.Date)
+                .FirstOrDefaultAsync(ct);
+            return row is null ? null : (row.Rate, row.RateDate);
+        }
+
+        if (await LatestPerUsd(from) is not { } fromUsd || await LatestPerUsd(to) is not { } toUsd)
+            return null;
+
+        var rateDate = fromUsd.RateDate < toUsd.RateDate ? fromUsd.RateDate : toUsd.RateDate;
+        return new FxQuote(Math.Round(toUsd.Rate / fromUsd.Rate, RateDecimals), rateDate, "saved");
+    }
+
     private async Task<(decimal Rate, DateOnly RateDate, string Source)> PerUsdAsync(
         string currency, DateOnly date, DateOnly today, CancellationToken ct)
     {

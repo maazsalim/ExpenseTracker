@@ -141,6 +141,21 @@ public class ExchangeRateServiceTests
     }
 
     [Fact]
+    public async Task LatestSavedRate_UsesTheNewestSavedRate_WithoutCallingTheApi()
+    {
+        Assert.Null(await service.GetLatestSavedRateAsync("AED", "CAD")); // nothing saved yet
+
+        await service.GetRateAsync("USD", "CAD", Friday); // saves Friday's rate
+        var callsBefore = source.Calls;
+
+        var quote = await service.GetLatestSavedRateAsync("AED", "CAD");
+
+        Assert.Equal(Math.Round(CadPerUsd / 3.6725m, 8), quote!.Rate);
+        Assert.Equal(Friday, quote.RateDate);
+        Assert.Equal(callsBefore, source.Calls);
+    }
+
+    [Fact]
     public async Task ApiFailure_DoesntUseASavedRateOlderThanAWeek()
     {
         var eightDaysEarlier = Friday.AddDays(-8);

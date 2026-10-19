@@ -1,0 +1,24 @@
+@* Under a budget: what's left (or over) once pending expenses arrive. *@
+@inject DisplayCurrency Display
+
+@if (Pending > 0)
+{
+    var after = Left - Pending;
+    <div class="budget-meta">
+        <span class="muted" title="@Hint">+ @Display.Format(Pending) pending</span>
+        <span class="@(after < 0 ? "text-over" : "muted")" title="@Hint">
+            @Display.Format(Math.Abs(after)) @(after < 0 ? "over" : "left") after pending
+        </span>
+    </div>
+}
+
+@code {
+    /// <summary>What's left of the budget now (negative if over).</summary>
+    [Parameter] public decimal Left { get; set; }
+
+    /// <summary>Still to come in this budget.</summary>
+    [Parameter] public decimal Pending { get; set; }
+
+    /// <summary>Explains what "pending" includes (shown on hover).</summary>
+    [Parameter] public string? Hint { get; set; }
+}

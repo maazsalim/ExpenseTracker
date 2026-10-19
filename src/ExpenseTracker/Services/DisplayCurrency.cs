@@ -52,7 +52,10 @@ public class DisplayCurrency(SecondaryCurrencyRate todaysRate, IOptions<Currency
     /// <summary>The expense's amount in the display currency, as fixed when it was saved.</summary>
     public decimal Of(Expense e) => ShowingSecondary ? e.AmountInSecondary : e.AmountInHome;
 
-    /// <summary>The rate used for <see cref="Of"/>.</summary>
+    /// <summary>A pending entry's (estimated) amount in the display currency.</summary>
+    public decimal Of(PendingEntry p) => ShowingSecondary ? p.AmountInSecondary : p.AmountInHome;
+
+    /// <summary>The rate used for <see cref="Of(Expense)"/>.</summary>
     public decimal RateOf(Expense e) => ShowingSecondary ? e.SecondaryFxRate : e.FxRate;
 
     /// <summary>A budget (set in the home currency) in the display currency, at today's rate.</summary>

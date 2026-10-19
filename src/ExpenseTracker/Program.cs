@@ -60,6 +60,7 @@ builder.Services.AddScoped<ExpenseConverter>();
 builder.Services.AddScoped<SecondaryCurrencyRate>();
 builder.Services.AddScoped<DisplayCurrency>();
 builder.Services.AddScoped<RecurringExpenseService>();
+builder.Services.AddScoped<PendingExpenseService>();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()

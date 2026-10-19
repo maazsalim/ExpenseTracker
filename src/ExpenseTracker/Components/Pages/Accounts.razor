@@ -159,7 +159,7 @@ else
 
     private async Task LoadAsync()
     {
-        var today = DateTime.Today;
+        var today = DateOnly.FromDateTime(DateTime.Today);
         var start = new DateOnly(today.Year, today.Month, 1);
         var end = start.AddMonths(1);
         var secondary = Display.ShowingSecondary;
@@ -171,7 +171,8 @@ else
                 a,
                 a.Expenses.Count,
                 db.RecurringExpenses.Any(r => r.AccountId == a.Id),
-                a.Expenses.Where(e => e.Date >= start && e.Date < end)
+                // Spent so far; expenses dated after today are pending.
+                a.Expenses.Where(e => e.Date >= start && e.Date < end && e.Date <= today)
                     .Sum(e => secondary ? e.AmountInSecondary : e.AmountInHome)))
             .ToListAsync();
         loaded = true;

@@ -1,0 +1,25 @@
+@* The striped part of a bar showing what pending expenses will add. Place it inside a
+   .breakdown-track, after the solid .breakdown-bar for what's already spent. *@
+
+@if (Pending > 0 && Of > 0)
+{
+    <div class="breakdown-pending @(!Neutral && Spent + Pending > Of ? "over" : "")"
+         style="left: @Left.ToString(CultureInfo.InvariantCulture)%; width: @Width.ToString(CultureInfo.InvariantCulture)%"></div>
+}
+
+@code {
+    /// <summary>Already spent (the solid part of the bar).</summary>
+    [Parameter] public decimal Spent { get; set; }
+
+    /// <summary>Still to come.</summary>
+    [Parameter] public decimal Pending { get; set; }
+
+    /// <summary>What a full bar represents, e.g. the budget.</summary>
+    [Parameter] public decimal Of { get; set; }
+
+    /// <summary>Never shown in the "over budget" colour (for bars that aren't budgets).</summary>
+    [Parameter] public bool Neutral { get; set; }
+
+    private decimal Left => Math.Min(100, Math.Round(Spent / Of * 100, 1));
+    private decimal Width => Math.Min(100 - Left, Math.Round(Pending / Of * 100, 1));
+}

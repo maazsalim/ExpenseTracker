@@ -4,6 +4,7 @@
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject DisplayCurrency Display
 @inject RecurringExpenseService Recurring
+@inject PendingExpenseService Pending
 @implements IDisposable
 
 <PageTitle>Expenses · Dual Expense Tracker</PageTitle>
@@ -35,6 +36,10 @@ else
             <div class="stat-label">This month</div>
             <div class="stat-value">@Display.Format(monthTotal)</div>
             <div class="stat-sub">@monthCount @(monthCount == 1 ? "expense" : "expenses") in @DateTime.Today.ToString("MMMM")</div>
+            @if (monthPending > 0)
+            {
+                <div class="stat-pending" title="@PendingHint">+ @Display.Format(monthPending) pending → @Display.Format(monthTotal + monthPending)</div>
+            }
         </div>
         <div class="card-panel stat-card">
             <div class="stat-label">Budget remaining</div>
@@ -44,8 +49,16 @@ else
                 <div class="stat-value @(remaining < 0 ? "text-over" : "")">@Display.Format(Math.Abs(remaining))@(remaining < 0 ? " over" : "")</div>
                 <div class="breakdown-track mt-2">
                     <div class="breakdown-bar @(remaining < 0 ? "bar-over" : "bar-indigo")" style="width: @BudgetPercent%"></div>
+                    <PendingSegment Spent="budgetSpent" Pending="budgetPending" Of="budgetTotal" />
                 </div>
                 <div class="stat-sub mt-1">@Display.Format(budgetSpent) of @BudgetLabel(budgetTotal) @(totalBudget is null ? "budgeted" : "overall budget")</div>
+                @if (budgetPending > 0)
+                {
+                    var afterPending = remaining - budgetPending;
+                    <div class="stat-pending @(afterPending < 0 ? "text-over" : "")" title="@PendingHint">
+                        @Display.Format(Math.Abs(afterPending)) @(afterPending < 0 ? "over" : "left") after pending
+                    </div>
+                }
             }
             else
             {
@@ -60,8 +73,12 @@ else
         </div>
         <div class="card-panel stat-card">
             <div class="stat-label">All time</div>
-            <div class="stat-value">@Display.Format(expenses.Sum(Display.Of))</div>
+            <div class="stat-value">@Display.Format(allTimeTotal)</div>
             <div class="stat-sub">@expenses.Count @(expenses.Count == 1 ? "expense" : "expenses") recorded</div>
+            @if (allTimePending > 0)
+            {
+                <div class="stat-pending" title="@PendingHint">+ @Display.Format(allTimePending) pending → @Display.Format(allTimeTotal + allTimePending)</div>
+            }
         </div>
     </div>
 
@@ -126,8 +143,14 @@ else
                         <tbody>
                             @foreach (var e in Filtered)
                             {
-                                <tr>
-                                    <td class="col-date muted text-nowrap">@e.Date.ToString("dd MMM yyyy")</td>
+                                <tr class="@(e.Date > today ? "row-upcoming" : "")">
+                                    <td class="col-date muted text-nowrap">
+                                        @e.Date.ToString("dd MMM yyyy")
+                                        @if (e.Date > today)
+                                        {
+                                            <span class="upcoming-tag" title="Dated after today, so it counts as pending">upcoming</span>
+                                        }
+                                    </td>
                                     <td class="col-desc">
                                         <div class="fw-medium">
                                             @e.Description
@@ -212,6 +235,18 @@ else
     private decimal budgetSpent;
     private decimal? totalBudget;
 
+    // Pending: recurring items not added yet, and expenses dated after today.
+    private List<PendingEntry> pending = new();
+    private DateOnly today;
+    private decimal monthPending;
+    private decimal budgetPending;
+    private decimal allTimeTotal;
+    private decimal allTimePending;
+
+    private const string PendingHint =
+        "Recurring items still due this month and expenses dated after today. " +
+        "Recurring amounts in the other currency are estimates at the latest saved rate.";
+
     // Budgets are set in CAD, so in AED they're converted at today's rate (approximate).
     private string BudgetLabel(decimal amount) => (Display.ShowingSecondary ? "≈ " : "") + Display.Format(amount);
 
@@ -244,9 +279,19 @@ else
             .ThenByDescending(e => e.Id)
             .ToListAsync();
         totalBudget = (await db.Settings.SingleOrDefaultAsync())?.TotalMonthlyBudget;
+        await LoadPendingAsync();
         ComputeStats();
         Display.Changed += OnDisplayCurrencyChanged;
         loaded = true;
+    }
+
+    // Everything pending up to the end of this month (including recurring items that are
+    // overdue but couldn't be added yet).
+    private async Task LoadPendingAsync()
+    {
+        today = Pending.Today;
+        var monthEnd = new DateOnly(today.Year, today.Month, 1).AddMonths(1).AddDays(-1);
+        pending = await Pending.BetweenAsync(DateOnly.MinValue, monthEnd);
     }
 
     private void OnDisplayCurrencyChanged() => InvokeAsync(() =>
@@ -259,30 +304,40 @@ else
 
     private void ComputeStats()
     {
-        var today = DateTime.Today;
-        var thisMonth = expenses.Where(e => e.Date.Year == today.Year && e.Date.Month == today.Month).ToList();
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+
+        // Spent = dated today or earlier. Later-dated expenses count as pending instead.
+        var thisMonth = expenses.Where(e => e.Date >= monthStart && e.Date <= today).ToList();
+        var pendingThisMonth = pending.Where(p => p.Date >= monthStart && p.Date <= monthEnd).ToList();
+
         monthTotal = thisMonth.Sum(Display.Of);
         monthCount = thisMonth.Count;
+        monthPending = pendingThisMonth.Sum(Display.Of);
         topCategory = thisMonth
             .GroupBy(e => e.Category?.Name ?? "Uncategorised")
             .Select(g => new CategoryTotal(g.Key, g.Sum(Display.Of)))
             .OrderByDescending(c => c.Amount)
             .FirstOrDefault();
 
+        allTimeTotal = expenses.Where(e => e.Date <= today).Sum(Display.Of);
+        allTimePending = pending.Sum(Display.Of)
+                         + expenses.Where(e => e.Date > monthEnd).Sum(Display.Of); // dated beyond this month
+
         // An overall budget covers all spending.
         if (totalBudget is { } overall)
         {
             budgetTotal = Display.Budget(overall);
             budgetSpent = monthTotal;
+            budgetPending = monthPending;
             return;
         }
 
         // Otherwise only spending in categories that have a budget counts against them.
-        var budgeted = categories.Where(c => c.MonthlyBudget is not null).ToList();
-        budgetTotal = Display.Budget(budgeted.Sum(c => c.MonthlyBudget!.Value));
-        budgetSpent = thisMonth
-            .Where(e => budgeted.Any(c => c.Id == e.CategoryId))
-            .Sum(Display.Of);
+        var budgeted = categories.Where(c => c.MonthlyBudget is not null).Select(c => c.Id).ToHashSet();
+        budgetTotal = Display.Budget(categories.Where(c => budgeted.Contains(c.Id)).Sum(c => c.MonthlyBudget!.Value));
+        budgetSpent = thisMonth.Where(e => budgeted.Contains(e.CategoryId)).Sum(Display.Of);
+        budgetPending = pendingThisMonth.Where(p => budgeted.Contains(p.CategoryId)).Sum(Display.Of);
     }
 
     private async Task DeleteAsync(Expense e)
@@ -291,6 +346,7 @@ else
         await db.Expenses.Where(x => x.Id == e.Id).ExecuteDeleteAsync();
         expenses.Remove(e);
         pendingDeleteId = null;
+        await LoadPendingAsync(); // the deleted expense may have been pending
         ComputeStats();
     }
 }
