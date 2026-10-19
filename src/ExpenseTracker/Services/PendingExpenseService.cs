@@ -42,6 +42,16 @@ public class PendingExpenseService(
             .Where(r => r.Active && r.NextDate <= to)
             .ToListAsync(ct);
 
+        // Dates that already have their entry (an expense linked to the item), so they aren't
+        // counted twice: once as that expense and once as the recurring item.
+        var itemIds = items.Select(i => i.Id).ToList();
+        var alreadyAdded = (await db.Expenses
+                .Where(e => e.RecurringExpenseId != null && itemIds.Contains(e.RecurringExpenseId.Value) && e.Date <= to)
+                .Select(e => new { Item = e.RecurringExpenseId!.Value, e.Date })
+                .ToListAsync(ct))
+            .Select(e => (e.Item, e.Date))
+            .ToHashSet();
+
         var rates = new Dictionary<string, (decimal ToHome, decimal ToSecondary)?>();
         foreach (var item in items)
         {
@@ -55,7 +65,7 @@ public class PendingExpenseService(
 
             for (var date = item.NextDate; date <= to; date = MonthlySchedule.Next(date, item.DayOfMonth))
             {
-                if (date >= from)
+                if (date >= from && !alreadyAdded.Contains((item.Id, date)))
                     pending.Add(new PendingEntry(date, item.Description, item.CategoryId,
                         Money.Convert(item.Amount, r.ToHome), Money.Convert(item.Amount, r.ToSecondary)));
             }

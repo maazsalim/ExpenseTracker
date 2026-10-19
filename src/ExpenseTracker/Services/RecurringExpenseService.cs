@@ -65,6 +65,16 @@ public class RecurringExpenseService(
         {
             while (item.NextDate <= today)
             {
+                // This date already has its entry (e.g. it was entered by hand, or the schedule
+                // was edited onto it): just move on, otherwise the item would never advance.
+                var dueDate = item.NextDate;
+                if (await db.Expenses.AnyAsync(e => e.RecurringExpenseId == item.Id && e.Date == dueDate, ct))
+                {
+                    item.NextDate = MonthlySchedule.Next(item.NextDate, item.DayOfMonth);
+                    await db.SaveChangesAsync(ct);
+                    continue;
+                }
+
                 var expense = new Expense
                 {
                     Description = item.Description,

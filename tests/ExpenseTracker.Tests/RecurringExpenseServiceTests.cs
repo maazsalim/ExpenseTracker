@@ -120,6 +120,29 @@ public class RecurringExpenseServiceTests
     }
 
     [Fact]
+    public async Task ADueDateThatAlreadyHasItsEntry_IsSkipped_AndTheItemMovesOn()
+    {
+        // The schedule was edited onto a date that already has its entry (the 1 Oct rent).
+        var id = Add(Rent(new DateOnly(2026, 10, 1)));
+        using (var ctx = dbFactory.CreateDbContext())
+        {
+            ctx.Expenses.Add(new Expense
+            {
+                Description = "Rent", Amount = 5000m, Currency = Currencies.AED, CategoryId = 1,
+                Date = new DateOnly(2026, 10, 1), RecurringExpenseId = id,
+            });
+            ctx.SaveChanges();
+        }
+
+        var created = await service.CreateDueAsync();
+
+        Assert.Equal(0, created);
+        using var check = dbFactory.CreateDbContext();
+        Assert.Single(check.Expenses);
+        Assert.Equal(new DateOnly(2026, 11, 1), check.RecurringExpenses.Single().NextDate);
+    }
+
+    [Fact]
     public void FromExpense_CopiesIt_AndIsNextDueAMonthLater()
     {
         var expense = new Expense

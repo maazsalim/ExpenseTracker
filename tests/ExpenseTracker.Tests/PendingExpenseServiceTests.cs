@@ -71,6 +71,28 @@ public class PendingExpenseServiceTests
     }
 
     [Fact]
+    public async Task ARecurringDateThatAlreadyHasItsEntry_IsCountedOnce()
+    {
+        // The gym's next date (21 Oct) is also the date of its existing, later-dated entry.
+        var gymDate = new DateOnly(2026, 10, 21);
+        AddRecurring(Me, 300m, Currencies.AED, day: 21, nextDate: gymDate);
+        using (var ctx = db.As(Me))
+        {
+            var itemId = ctx.RecurringExpenses.Single().Id;
+            ctx.Expenses.Add(new Expense
+            {
+                Description = "Gym", Date = gymDate, CategoryId = 2, RecurringExpenseId = itemId,
+                AmountInHome = 116.15m, AmountInSecondary = 300m,
+            });
+            ctx.SaveChanges();
+        }
+
+        var entry = Assert.Single(await ServiceFor(Me).BetweenAsync(MonthStart, MonthEnd));
+
+        Assert.Equal((gymDate, 116.15m), (entry.Date, entry.AmountInHome)); // the real entry, not an estimate
+    }
+
+    [Fact]
     public async Task NextMonthsDates_AreNotPendingThisMonth()
     {
         AddRecurring(Me, 50m, Currencies.CAD, day: 5, nextDate: new DateOnly(2026, 11, 5));

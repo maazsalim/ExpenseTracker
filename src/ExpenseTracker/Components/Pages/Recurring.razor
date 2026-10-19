@@ -264,10 +264,16 @@ else
                     return;
                 }
 
-                // A new schedule starts from today (or the start date), never re-adding past months.
+                // A new schedule starts from today (or the start date), never re-adding past months,
+                // and after the latest entry it already has (e.g. an entry you moved to a new date).
                 if (existing.DayOfMonth != form.DayOfMonth || existing.StartDate != form.StartDate)
                 {
                     var from = form.StartDate > Today ? form.StartDate : Today;
+                    var latestEntry = await db.Expenses
+                        .Where(e => e.RecurringExpenseId == existing.Id)
+                        .MaxAsync(e => (DateOnly?)e.Date);
+                    if (latestEntry is { } latest && latest >= from)
+                        from = latest.AddDays(1);
                     existing.NextDate = MonthlySchedule.FirstOnOrAfter(from, form.DayOfMonth);
                 }
                 existing.Description = form.Description;
