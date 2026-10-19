@@ -62,6 +62,10 @@ builder.Services.AddScoped<DisplayCurrency>();
 builder.Services.AddScoped<RecurringExpenseService>();
 builder.Services.AddScoped<PendingExpenseService>();
 
+// Public demo account for portfolio visitors (Demo:Email / Demo:Password); its data resets daily.
+builder.Services.AddSingleton<DemoAccount>();
+builder.Services.AddScoped<DemoDataService>();
+
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -94,5 +98,6 @@ app.MapPost("/logout", async (SignInManager<IdentityUser> signIn, [FromForm] str
 });
 
 await OwnerAccount.EnsureAsync(app.Services);
+await DemoAccount.EnsureAsync(app.Services);
 
 app.Run();

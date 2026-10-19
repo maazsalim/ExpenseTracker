@@ -59,6 +59,9 @@ namespace ExpenseTracker.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<DateTime?>("SampleDataLoadedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<decimal?>("TotalMonthlyBudget")
                         .HasPrecision(12, 2)
                         .HasColumnType("numeric(12,2)");

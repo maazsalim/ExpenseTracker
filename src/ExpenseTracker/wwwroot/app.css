@@ -233,6 +233,17 @@ h1:focus {
     max-width: 260px;
 }
 
+/* ---------- Demo account ---------- */
+
+.demo-banner {
+    padding: 0.6rem 1rem;
+    background: #eef2ff;
+    border-bottom: 1px solid #c7d2fe;
+    color: var(--brand-700);
+    font-size: 0.85rem;
+    text-align: center;
+}
+
 /* ---------- Login ---------- */
 
 .auth-page {

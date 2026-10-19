@@ -5,6 +5,7 @@
 @inject DisplayCurrency Display
 @inject RecurringExpenseService Recurring
 @inject PendingExpenseService Pending
+@inject DemoDataService DemoData
 @implements IDisposable
 
 <PageTitle>Expenses · Dual Expense Tracker</PageTitle>
@@ -267,6 +268,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         // Add any recurring expenses that came due since the app was last opened.
+        await DemoData.ResetIfDueOnceAsync(); // demo account only: fresh sample data each day
         await Recurring.RunOnceAsync();
 
         using var db = await DbFactory.CreateDbContextAsync();

@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@inject DemoAccount Demo
 
 <div class="page">
     <aside class="sidebar">
@@ -6,6 +7,16 @@
     </aside>
 
     <main>
+        <AuthorizeView>
+            <Authorized>
+                @if (Demo.Email is not null && string.Equals(context.User.Identity?.Name, Demo.Email, StringComparison.OrdinalIgnoreCase))
+                {
+                    <div class="demo-banner" role="note">
+                        <strong>Demo account.</strong> The data is made up and resets every day, so feel free to try anything.
+                    </div>
+                }
+            </Authorized>
+        </AuthorizeView>
         <article class="content">
             @Body
         </article>
